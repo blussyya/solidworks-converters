@@ -24,11 +24,13 @@
   if(typeof module==='object'&&module.exports){
     const zlib=require('zlib'),MAX=128*1024*1024;
     module.exports=factory(require('../container/modern'),require('../container/ole'),require('./xt'),
-      {inflateRaw:b=>zlib.inflateRawSync(b,{maxOutputLength:MAX}),inflate:b=>zlib.inflateSync(b,{maxOutputLength:MAX})});
-  }else root.SLDPRTPartition=factory(root.SLDPRTModern,root.SLDPRTOLE,root.SLDPRTXT,root.SLDPRTInflate);
-})(typeof self!=='undefined'?self:this,function(modern,OLE,xt,defaultCodec){
+      {inflateRaw:b=>zlib.inflateRawSync(b,{maxOutputLength:MAX}),inflate:b=>zlib.inflateSync(b,{maxOutputLength:MAX})},
+      require('../container/blast'));
+  }else root.SLDPRTPartition=factory(root.SLDPRTModern,root.SLDPRTOLE,root.SLDPRTXT,root.SLDPRTInflate,root.SLDPRTBlast);
+})(typeof self!=='undefined'?self:this,function(modern,OLE,xt,defaultCodec,Blast){
 'use strict';
 const {parse}=xt;
+const MAX=128*1024*1024;
 const GUID=new Uint8Array([0x23,0x1d,0xd5,0x71,0xda,0x81,0x48,0xa2,0xa8,0x58,0x98,0xb2,0x1b,0x89,0xef,0x99]);
 const GUID_HEX='231dd571da8148a2a85898b21b89ef99';
 const u8=b=>b instanceof Uint8Array?b:new Uint8Array(b);
@@ -115,10 +117,30 @@ function survey(raw,all,codec){
   return rows;
 }
 
-/* The saved solid body, parsed. Returns {source, kind, parsed}; throws if no partition exists. */
+/* Pre-2011 files (EXP-077) have no Config-N-Partition. Their body is one of:
+ *   Config-N-Body   u32le compressed length | PKWARE DCL implode   -> neutral binary "PS" transmit
+ *                   (chainwheel: Parasolid 13, schema 13006 itself, no edit scripts)
+ *   <config name>   u32le length | bare binary transmit, little-endian, starting "B"
+ *                   (plate4: stream "Default", Parasolid 9, schema 9008)
+ * A part with no solid (SW2000-s01: planes and origin only) has neither. */
+function legacyBody(all){
+  for(const [k,b] of Object.entries(all)){
+    if(b.length<8||u32(b,0)!==b.length-4)continue;
+    if(/^Config-\d+-Body$/.test(k)){const inner=u8(Blast.blast(b.subarray(4),{maxOutput:MAX}).data);if(latin1(inner.subarray(0,4))==='PS\0\0')return {name:k,inner,kind:'body (PKWARE implode)'};}
+    else if(b[4]===66&&/^: TRANSMIT FILE/.test(latin1(b.subarray(9,24))))return {name:k,inner:b.subarray(4),kind:'body (bare binary)'};
+  }
+  return null;
+}
+
+/* The saved solid body, parsed. Returns {source, kind, parsed}; throws if no body exists. */
 function readBody(raw,options={},codec){
   raw=u8(raw);codec=codec||options.codec||defaultCodec;
   const all=streams(raw,codec);
+  if(modern.isOLE2(raw)&&!('Config-0-Partition' in all)){
+    const l=legacyBody(all);
+    if(!l)throw Error('No Parasolid body: no Config-0-Partition, Config-N-Body or transmit stream (a part with no solid has none)');
+    return {source:l.name,kind:l.kind,parsed:parse(l.inner,true,options)};
+  }
   const primary=extractPrimary(raw,modern.isOLE2(raw)?null:all,codec);
   let parsed=parse(primary.inner,true,options),source=primary.name,kind='partition';
   if(!parsed.error&&!parsed.nodes.some(n=>n.type===14)){
@@ -134,5 +156,5 @@ function readBody(raw,options={},codec){
   return {source,kind,parsed};
 }
 
-return {GUID,streams,sections,extractPrimary,survey,readBody};
+return {GUID,streams,sections,extractPrimary,survey,legacyBody,readBody};
 });

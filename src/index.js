@@ -14,13 +14,15 @@
  *                        {mode:'mesh'}: from the display mesh, planes analytic, the rest
  *                        faceted; {mode:'faceted'}: every face as triangles
  *   readBrep(file, opts) the native Parasolid body: typed nodes + graph checks
+ *   volume(file)         exact enclosed volume of the native body, m³
  *                                                                    (docs/format/parasolid.md)
  */
 const fs=require('fs'),zlib=require('zlib');
-const modern=require('./container/modern'),ole=require('./container/ole');
+const modern=require('./container/modern'),ole=require('./container/ole'),blast=require('./container/blast');
 const display=require('./display'),convert=require('./convert');
 const xt=require('./parasolid/xt'),partition=require('./parasolid/partition'),graph=require('./parasolid/topology');
 const stepExport=require('./step/export');
+const nativeModel=require('./brep/native'),brepVolume=require('./brep/volume'),stepWriter=require('./step/write'),stepReader=require('./step/read');
 
 const MAX=128*1024*1024;
 const inflateRaw=b=>zlib.inflateRawSync(b,{maxOutputLength:MAX});
@@ -67,11 +69,15 @@ function toSTEP(input,opts){
   return {text:r.text,report:{mode:mode==='auto'?'mesh':mode,...r.report}};
 }
 
+/* Exact enclosed volume (m³) of the native B-rep, from its surfaces and curves. */
+function volume(input){return brepVolume.volume(nativeModel.build(readBrep(input).parsed));}
+
 /* Native B-rep: {source stream, section kind, parsed: xt.parse result, graph: topology checks}. */
 function readBrep(input,opts){
   const r=partition.readBody(bytes(input),opts||{});
   return {...r,graph:graph.topology(r.parsed)};
 }
 
-module.exports={parse,info,toSTL,toSTEP,readBrep,inflateRaw,inflateZlib,
-  display,convert,container:{modern,ole},parasolid:{xt,partition,topology:graph.topology,census:graph.census}};
+module.exports={parse,info,toSTL,toSTEP,readBrep,volume,inflateRaw,inflateZlib,
+  brep:{model:nativeModel.build,volume:brepVolume.volume},step:{read:stepReader.readBrep,write:stepWriter.write},
+  display,convert,container:{modern,ole,blast},parasolid:{xt,partition,topology:graph.topology,census:graph.census}};

@@ -75,7 +75,8 @@ test('display face IDs and edge IDs are native Parasolid node IDs',()=>{
   }
 });
 
-test('STL and STEP export',()=>{
+test('STL and STEP export, mesh and exact',()=>{
+  const {compare}=require('../src/brep/compare'),native=require('../src/brep/native');
   for(const rel of Object.keys(EXPECT)){
     const stl=S.toSTL(file(rel));
     assert.equal(stl.length,84+50*stl.readUInt32LE(80),rel);
@@ -87,6 +88,21 @@ test('STL and STEP export',()=>{
       if(mode==='exact'){assert.equal(report.bodies,1,rel);assert.equal(Object.values(ents).filter(e=>/^MANIFOLD_SOLID_BREP\(/.test(e)).length,1,rel);}
       else assert.equal(report.body,'MANIFOLD_SOLID_BREP',rel);
     }
+  }
+});
+
+test('exact volumes of the samples',()=>{
+  const exact={
+    'sw2022/C00_cube_10mm.SLDPRT':1000,
+    'sw2022/C04_cube_hole_5mm.SLDPRT':1000-Math.PI*6.25*10,     // 5 mm through hole in a 10 mm cube
+    'sw2022/C15_torus.SLDPRT':2*Math.PI*Math.PI*5*2*2,           // R 5, r 2
+    'sw2011/C10_cube_shell_1mm.SLDPRT':424,
+  };
+  for(const [rel,want] of Object.entries(exact)){
+    const v=S.volume(file(rel)).volume*1e9;   // mm³
+    assert(Math.abs(v-want)<1e-9*want,`${rel}: ${v} mm³, expected ${want}`);
+    const back=require('../src/brep/volume').volume(S.step.read(S.toSTEP(file(rel)).text)).volume*1e9;
+    assert(Math.abs(back-want)<1e-9*want,`${rel}: our STEP holds ${back} mm³`);
   }
 });
 

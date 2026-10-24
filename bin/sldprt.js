@@ -6,7 +6,7 @@
  *   sldprt info    <model.SLDPRT>                      what is in the file
  *   sldprt parse   <model.SLDPRT>                      display mesh as JSON (stdout)
  *   sldprt convert <model.SLDPRT> [--stl F] [--step F] [--ascii] [--mesh|--faceted] [--scale N]
- *   sldprt brep    <model.SLDPRT> [--json|--nodes]     native Parasolid body
+ *   sldprt brep    <model.SLDPRT> [--json|--nodes] [--volume]   native Parasolid body
  *   sldprt render  <model.SLDPRT> [out.png]            six-view PNG contact sheet
  *   sldprt view    <model.SLDPRT> [--still] [--dark]   interactive terminal viewer
  *   sldprt serve   [--port N] [--host H] [--open]      browser viewer
@@ -23,8 +23,10 @@ const USAGE=`usage: sldprt <command> [options]
                                             --mesh writes it from the display mesh (planes exact,
                                             the rest triangles), --faceted all triangles. --scale
                                             applies to STL and mesh STEP (exact STEP is in mm)
-  brep    <model.SLDPRT> [--json | --nodes] native Parasolid B-rep: node census and graph checks
-                                            (--json: summary as JSON, --nodes: every typed node)
+  brep    <model.SLDPRT> [--json | --nodes] [--volume]
+                                            native Parasolid B-rep: node census and graph checks
+                                            (--json: summary as JSON, --nodes: every typed node,
+                                            --volume: exact volume)
   render  <model.SLDPRT> [out.png]          six-view contact sheet of the display mesh
   view    <model.SLDPRT> [--still] [--dark] [--edges|--no-edges]
                                             interactive terminal viewer (truecolor terminal)
@@ -95,6 +97,8 @@ const commands={
   console.log(`source   ${sum.source} (${sum.kind})\nschema   ${sum.schema}\nnodes    ${sum.nodes}${sum.error?'  — stopped: '+sum.error:''}`);
   console.log('census   '+Object.entries(sum.census).map(([k,v])=>`${k}×${v}`).join('  '));
   console.log(`graph    ${sum.graphChecks} checks, ${sum.graphErrors.length} failed${sum.graphErrors.length?':\n  '+sum.graphErrors.slice(0,20).join('\n  '):''}`);
+  if(has(a,'--volume')){let v;try{v=S.volume(a[0]);}catch(e){v={error:e.message};}
+   console.log('volume   '+(v.error?'not computed: '+v.error:v.volume===undefined?'not computed: unsupported '+v.unsupported.join(', '):(v.volume*1e9).toFixed(6)+' mm³ (exact, from the B-rep)'));}
   return sum.error||sum.graphErrors.length?1:0;
  },
  render(a){

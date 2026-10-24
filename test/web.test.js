@@ -34,7 +34,7 @@ test('server serves the page, worker, sources, previews and the legacy sample',a
   const {server,url}=await start({port:19083});
   try{
     const origin=new URL(url).origin;
-    const assets=['/web/index.html','/web/parse-worker.js','/web/mesh-data.js','/src/display.js','/src/container/modern.js','/src/container/ole.js','/src/inflate.js','/web/step-worker.js','/src/parasolid/partition.js','/src/step/export.js','/src/brep/fit.js','/samples/sw2011/C10_cube_shell_1mm.SLDPRT'];
+    const assets=['/web/index.html','/web/parse-worker.js','/web/mesh-data.js','/src/display.js','/src/container/modern.js','/src/container/blast.js','/src/container/ole.js','/src/inflate.js','/web/step-worker.js','/src/parasolid/partition.js','/src/step/export.js','/src/brep/fit.js','/samples/sw2011/C10_cube_shell_1mm.SLDPRT'];
     for(const a of assets){const r=await fetch(origin+a);assert.equal(r.status,200,a);assert((await r.arrayBuffer()).byteLength>0,a);}
     assert.equal((await fetch(origin+'/..%2f..%2fetc/passwd')).status>=400,true);
     const root=await fetch(origin+'/',{redirect:'manual'});assert.equal(root.status,302);
