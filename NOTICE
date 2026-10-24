@@ -1,0 +1,10 @@
+solidworks-converters
+Copyright 2026 blussyya
+https://github.com/blussyya/solidworks-converters
+
+This code implements the SolidWorks .SLDPRT format as established by the
+sldprt-format-research project:
+https://github.com/blussyya/sldprt-format-research
+
+That project's documentation is licensed under CC BY-SA 4.0. Work that ports or
+adapts it, rather than this code, must credit it under those terms.
