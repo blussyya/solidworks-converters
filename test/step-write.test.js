@@ -13,17 +13,18 @@ const models=()=>{const out=[];for(const era of ['SW2011','SW2022'])for(const m 
 test('49 controlled models: our STEP reads back as the native body, and holds the same volume as SolidWorks\' STEP',needsCorpus,t=>{
   let n=0,worst=0;const split={};
   for(const m of models()){
-    const N=native.build(S.readBrep(m.sldprt).parsed),out=S.toSTEP(m.sldprt,{source:'brep',name:m.name});
+    const N=native.build(S.readBrep(m.sldprt).parsed),out=S.toSTEP(m.sldprt,{name:m.name});
     const back=S.step.read(out.text),r=compare(N,back);
     assert(r.pass,`${m.name}: `+r.problems.slice(0,5).join('; '));
-    if(out.report.splitFaces)split[m.name]=out.report.splitFaces;
+    if(N.faces.some(f=>!f.loops.length))split[m.name]=out.report.split.split;
     const mine=volume(back).volume,sw=volume(S.step.read(fs.readFileSync(m.step,'utf8'))).volume;
     assert(Math.abs(mine-sw)<=1e-10*sw,`${m.name}: ${mine*1e9} mm³ vs SolidWorks ${sw*1e9} mm³`);
     worst=Math.max(worst,Math.abs(mine-sw)/sw);n++;
   }
   assert.equal(n,49);
-  // whole spheres and tori are the only faces with no boundary
+  // whole spheres and tori are the only faces with no boundary, and STEP needs them cut
   assert.deepEqual(Object.keys(split).sort(),['SW2011/C14_sphere','SW2011/C15_torus','SW2022/C14_sphere','SW2022/C15_torus']);
+  for(const [name,n] of Object.entries(split))assert(n>0,name+': boundary-less face not split');
   t.diagnostic(`${n} models round-trip; worst relative volume difference to SolidWorks' STEP ${worst.toExponential(1)}`);
 });
 
@@ -41,24 +42,20 @@ test('exact volumes against closed-form values',needsCorpus,()=>{
   }
 });
 
-test('production parts: exact where every type is supported, mesh fallback otherwise',needsCorpus,t=>{
+test('production parts: every part with a solid exports exact STEP',needsCorpus,t=>{
   const got={};
   for(const f of walk(path.join(CORPUS,'test files original'))){
     const name=path.relative(path.join(CORPUS,'test files original'),f);
     if(name.startsWith('controlled'))continue;   // copies of the controlled cubes, covered above
     let r;try{r=S.toSTEP(f).report;}catch(e){got[name]='none';continue;}
-    got[name]=r.source;
-    if(r.source==='mesh')assert.match(r.fallback,/INTERSECTION|has no curve/,name);
+    got[name]=r.mode;
   }
   const count=k=>Object.values(got).filter(x=>x===k).length;
-  assert.equal(got['PTC GE8080-8.SLDPRT'],'brep');
-  assert.equal(got['Pocket Wheel.SLDPRT'],'mesh');
-  assert.equal(got['cube.SLDPRT'],'brep');
-  assert.equal(got['plate4.sldprt'],'brep');        // Parasolid 9 body, all planes
-  assert.equal(got['chainwheel.sldprt'],'mesh');    // INTERSECTION curves; mesh from DisplayLists__Zip
+  assert.equal(got['plate4.sldprt'],'exact');       // Parasolid 9 body, all planes
+  assert.equal(got['chainwheel.sldprt'],'exact');   // Parasolid 13 body, INTERSECTION curves
   assert.equal(got['SW2000-s01.SLDPRT'],'none');    // no solid in the part
-  assert.deepEqual([count('brep'),count('mesh'),count('none')],[3,7,1]);
-  t.diagnostic(`exact B-rep STEP ${count('brep')}, mesh fallback ${count('mesh')}, nothing to export ${count('none')}`);
+  assert.deepEqual([count('exact'),count('none')],[10,1]);
+  t.diagnostic(`exact STEP ${count('exact')}, nothing to export ${count('none')}`);
 });
 
 test('plate4 (Parasolid 9): exact STEP, volume equals its own display mesh',needsCorpus,()=>{
