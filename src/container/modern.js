@@ -97,7 +97,7 @@
 
       if (dataEnd > buf.length) continue;
 
-      if (dv.getUint32(sigStart + 14, true) >= 65536 && compSize > 0) {
+      if (compSize > 0) {
         var name = '';
         for (var i = 0; i < nameSize; i++) {
           name += String.fromCharCode(rolByte(buf[nameStart + i], key));
@@ -114,6 +114,9 @@
           } catch (e2) { /* leave data null */ }
         }
 
+        // A real stream inflates to exactly the size at +22. Directory-like records elsewhere in
+        // the file reuse a stream's name but not its sizes, and can inflate to junk.
+        if (data && data.length !== dv.getUint32(sigStart + 22, true)) data = null;
         if (data && data.length > 0) {
           // header+14 is the CRC-32 of the inflated bytes (1,730/1,730 named streams). The
           // six-byte signature also occurs inside unrelated data; those false hits carry

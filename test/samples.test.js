@@ -124,13 +124,27 @@ test('STEP names with apostrophes are escaped',()=>{
   assert.equal(step.readBrep(text).faces.length,6);
 });
 
+test('a stream is kept whatever its CRC-32 value',()=>{
+  // CRC-32 has no minimum; an earlier reader skipped streams whose CRC was below 65536
+  let payload,crc;for(let i=0;;i++){payload=Buffer.from('stream '+i);crc=modern.crc32(payload)>>>0;if(crc<65536)break;}
+  const name=Buffer.from('Contents/Small'),key=4,ror=b=>((b>>>key)|(b<<(8-key)))&255;
+  const comp=zlib.deflateRawSync(payload),h=Buffer.alloc(30);
+  h.writeUInt16LE(20,4);h.writeUInt16LE(6,6);h.writeUInt16LE(8,8);
+  h.writeUInt32LE(crc,14);h.writeUInt32LE(comp.length,18);h.writeUInt32LE(payload.length,22);h.writeUInt16LE(name.length,26);
+  const file=Buffer.concat([Buffer.from([0,0,0,0,0,0,0,key]),h,Buffer.from(name.map(ror)),comp]);
+  const s=modern.decompressOpenSX(file,b=>zlib.inflateRawSync(b),b=>zlib.inflateSync(b));
+  assert.equal(Buffer.from(s['Contents/Small']).toString(),payload.toString());
+});
+
 test('corruption is reported, not parsed',()=>{
   const cube=fs.readFileSync(file('sw2022/C00_cube_10mm.SLDPRT'));
   // flip one bit of the DisplayLists stream's stored CRC-32
   const key=cube[7],rol=(b,s)=>((b<<s)|(b>>>(8-s)))&255;let crcAt=-1;
   for(let at=cube.indexOf(Buffer.from([20,0,6,0,8,0]));at>=0;at=cube.indexOf(Buffer.from([20,0,6,0,8,0]),at+1)){
     const s=at-4,n=cube.readUInt32LE(s+26);if(s<0||n>1024)continue;let name='';for(let i=0;i<n;i++)name+=String.fromCharCode(rol(cube[s+30+i],key&7));
-    if(name==='Contents/DisplayLists'&&cube.readUInt32LE(s+14)>=65536){crcAt=s+14;break;}}
+    if(name!=='Contents/DisplayLists')continue;
+    let d;try{d=zlib.inflateRawSync(cube.subarray(s+30+n,s+30+n+cube.readUInt32LE(s+18)));}catch(_){continue;}
+    if(d.length===cube.readUInt32LE(s+22)){crcAt=s+14;break;}}
   assert(crcAt>0);const bad=Buffer.from(cube);bad.writeUInt32LE((bad.readUInt32LE(crcAt)^1)>>>0,crcAt);
   assert.match(S.parse(bad).errors.join(),/CRC-32 mismatch in stream Contents\/DisplayLists/);
   const shell=fs.readFileSync(file('sw2011/C10_cube_shell_1mm.SLDPRT'));

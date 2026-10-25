@@ -92,10 +92,11 @@ test('container: CRC-32 verified on every named stream; inflated size and name l
     const rol=(x,k)=>((x<<k)|(x>>>(8-k)))&255;
     for(let at=b.indexOf(Buffer.from([20,0,6,0,8,0]));at>=0;at=b.indexOf(Buffer.from([20,0,6,0,8,0]),at+1)){
       const h=at-4,nl=b.readUInt32LE(h+26),comp=b.readUInt32LE(h+18);
-      if(h<0||nl>1024||comp>50e6||h+30+nl+comp>b.length||!(b.readUInt32LE(h+14)>=65536&&comp>0))continue;
+      if(h<0||nl>1024||comp>50e6||h+30+nl+comp>b.length||!comp)continue;
       let name='';for(let i=0;i<nl;i++)name+=String.fromCharCode(rol(b[h+30+i],4));
       if(!/^[\x20-\x7e]+$/.test(name)||!s[name])continue;
       let data;try{data=iR(b.subarray(h+30+nl,h+30+nl+comp));}catch(_){continue;}
+      if(Buffer.compare(Buffer.from(data),Buffer.from(s[name])))continue;   // not the header the stream came from
       assert.equal(b.readUInt32LE(h+22),data.length,f+' '+name);assert.equal(b.readUInt16LE(h+28),0,f+' '+name);named++;
     }
   }
