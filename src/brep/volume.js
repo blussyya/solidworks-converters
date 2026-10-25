@@ -146,13 +146,27 @@ function faceIntegral(face,M,segments){
   return total/3;
 }
 
+/* Why an edge's curve can't be integrated along, or null if it can. Intersection curves,
+ * SP-curves and tolerant edges (no 3D curve, only one per fin) have no closed-form evaluation
+ * here yet. */
+const EXACT_CURVES=new Set(['line','circle','ellipse','bspline']);
+function curveIssue(e){
+  if(e.tolerant||!e.curve)return 'tolerant edge';
+  const c=e.curve.type==='trimmed'?e.curve.basis:e.curve;
+  return EXACT_CURVES.has(c.type)?null:c.type==='spcurve'?'SP-curve edge':c.type+' curve';
+}
+
 /* Faces with no boundary (a whole sphere or torus) are measured through src/brep/seams.js,
  * which splits them into bounded pieces the same way the STEP writer does. */
 function volume(model,opts={}){
   const segments=opts.segments||64;
   const M=model.faces.some(f=>!f.loops.length)?require('./seams').addSeams(model):model;
   let v=0;const unsupported=new Set();
-  for(const f of M.faces){const x=faceIntegral(f,M,segments);if(x===null)unsupported.add(f.surface.type);else v+=x;}
+  for(const f of M.faces){
+    const issues=f.loops.flatMap(l=>l.coedges.map(co=>curveIssue(M.edges.get(co.edge)))).filter(Boolean);
+    if(issues.length){for(const i of issues)unsupported.add(i);continue;}
+    const x=faceIntegral(f,M,segments);if(x===null)unsupported.add(f.surface.type);else v+=x;
+  }
   return {volume:unsupported.size?undefined:v,faces:M.faces.length,unsupported:[...unsupported]};
 }
 

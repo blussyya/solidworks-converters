@@ -106,6 +106,16 @@ test('exact volumes of the samples',()=>{
   }
 });
 
+test('volume reports curves it cannot integrate instead of throwing',()=>{
+  const native=require('../src/brep/native'),{volume}=require('../src/brep/volume');
+  const cube=()=>native.build(S.readBrep(file('sw2022/C00_cube_10mm.SLDPRT')).parsed);
+  const [a,b]=[...cube().edges.keys()];
+  const M=cube();M.edges.get(a).curve={type:'intersection'};M.edges.get(b).tolerant=true;
+  const r=volume(M);
+  assert.equal(r.volume,undefined);
+  assert.deepEqual(r.unsupported.sort(),['intersection curve','tolerant edge']);
+});
+
 test('STEP names with apostrophes are escaped',()=>{
   const step=require('../src/step/read');
   const {text}=S.toSTEP(file('sw2022/C00_cube_10mm.SLDPRT'),{name:"O'Brien"});
