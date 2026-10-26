@@ -23,6 +23,7 @@ const display=require('./display'),convert=require('./convert');
 const xt=require('./parasolid/xt'),partition=require('./parasolid/partition'),graph=require('./parasolid/topology');
 const stepExport=require('./step/export');
 const nativeModel=require('./brep/native'),brepVolume=require('./brep/volume'),stepWriter=require('./step/write'),stepReader=require('./step/read');
+const Procedural=require('./brep/procedural');
 
 const MAX=128*1024*1024;
 const inflateRaw=b=>zlib.inflateRawSync(b,{maxOutputLength:MAX});
@@ -69,8 +70,9 @@ function toSTEP(input,opts){
   return {text:r.text,report:{mode:mode==='auto'?'mesh':mode,...r.report}};
 }
 
-/* Exact enclosed volume (m³) of the native B-rep, from its surfaces and curves. */
-function volume(input){return brepVolume.volume(nativeModel.build(readBrep(input).parsed));}
+/* Exact enclosed volume (m³) of the native B-rep, from its surfaces and curves. Resolved first,
+ * like the STEP writer, so intersections and blends are fitted before integrating. */
+function volume(input){return brepVolume.volume(Procedural.resolve(nativeModel.build(readBrep(input).parsed)));}
 
 /* Native B-rep: {source stream, section kind, parsed: xt.parse result, graph: topology checks}. */
 function readBrep(input,opts){

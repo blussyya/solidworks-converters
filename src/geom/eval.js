@@ -238,7 +238,10 @@ function bsplineProject1(s,p,u,v){
   const nu=s.ctrl.length,nv=s.ctrl[0].length;
   const [u0,u1]=[s.ku[s.du],s.ku[nu]],[v0,v1]=[s.kv[s.dv],s.kv[nv]];
   for(let it=0;it<60;it++){ // Gauss–Newton on the tangent plane
-    const e=bsplineSurface(s,u,v),r=sub(p,e.p),a=dot(e.du,e.du),b=dot(e.du,e.dv),c=dot(e.dv,e.dv),det=a*c-b*b;if(!det)break;
+    // lightly damped so a direction the surface doesn't depend on stays put: at a degenerate
+    // edge (a blend's tip, where the two contacts meet) every (u,v) on it is as good a fit and
+    // an undamped step slides along it
+    const e=bsplineSurface(s,u,v),r=sub(p,e.p),lam=1e-12*(dot(e.du,e.du)+dot(e.dv,e.dv)),a=dot(e.du,e.du)+lam,b=dot(e.du,e.dv),c=dot(e.dv,e.dv)+lam,det=a*c-b*b;if(!det)break;
     const x=dot(r,e.du),y=dot(r,e.dv),du=(c*x-b*y)/det,dv=(a*y-b*x)/det;
     const nu2=Math.min(u1,Math.max(u0,u+du)),nv2=Math.min(v1,Math.max(v0,v+dv));
     if(Math.abs(nu2-u)<1e-16&&Math.abs(nv2-v)<1e-16){u=nu2;v=nv2;break;}u=nu2;v=nv2;}
