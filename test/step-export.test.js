@@ -49,7 +49,9 @@ test('OpenCascade: hand-built models are valid solids of the right volume',needs
 
 test('OpenCascade: every corpus part (tools/validate.js)',needsBoth,t=>{
   const out=fs.mkdtempSync(path.join(os.tmpdir(),'sldprt-validate-'));
-  const {rows}=V.run({corpus:CORPUS,python:PY,out});
+  // the online sample (test files online) is covered by test/online.test.js; OpenCascade can sit
+  // on one of its parts for over an hour, and validate-step.py has no per-part timeout
+  const {rows}=V.run({corpus:CORPUS,python:PY,out,filter:/^(?!test files online[\\/])/});
   const by={};for(const r of rows)(by[r.status]=by[r.status]||[]).push(r);
   const bad=[...(by.failed||[]),...(by['export failed']||[])];
   assert.equal(bad.length,0,bad.map(r=>r.part+': '+r.reason).join('\n'));
