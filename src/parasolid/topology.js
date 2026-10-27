@@ -17,7 +17,7 @@ function topology(r){
   const test=(ok,msg)=>{checks++;if(!ok)errors.push(msg);};
   const target=(n,key,types,required=false)=>{const p=n.values[key];if(!p){test(!required,`${n.index}.${key}: missing`);return null;}const v=m.get(p);test(!!v&&types.includes(v.type),`${n.index}.${key} -> ${p}: type`);return v;};
   for(const n of r.nodes){const v=n.values;
-    if(n.type===14){target(n,'surface',[50,51,52,53,54,56,59,67,124],true);target(n,'shell',[13],true);target(n,'front_shell',[13],true);
+    if(n.type===14){target(n,'surface',[50,51,52,53,54,56,59,60,67,68,124],true);target(n,'shell',[13],true);target(n,'front_shell',[13],true);
       let i=v.loop,seen=new Set();while(i){if(seen.has(i)){errors.push(`face ${n.index}: loop chain cycle`);break;}seen.add(i);const l=m.get(i);test(l?.type===15&&l.values.face===n.index,`face ${n.index}: loop ownership ${i}`);if(!l)break;i=l.values.next;}}
     if(n.type===15){target(n,'face',[14],true);const first=v.fin;let i=first,seen=new Set();do{const f=m.get(i);test(f?.type===17&&f.values.loop===n.index,`loop ${n.index}: fin ${i}`);if(!f||seen.has(i))break;seen.add(i);i=f.values.forward;}while(i!==first&&seen.size<=r.nodes.length);test(i===first&&seen.size>0,`loop ${n.index}: open fin ring`);rings.push({loop:n.index,fins:[...seen]});}
     if(n.type===17){target(n,'edge',[16]);target(n,'vertex',[18]);if(v.loop){const f=target(n,'forward',[17],true),b=target(n,'backward',[17],true);test(f?.values.backward===n.index,`fin ${n.index}: forward/backward`);test(b?.values.forward===n.index,`fin ${n.index}: backward/forward`);}
@@ -25,7 +25,9 @@ function topology(r){
     if(n.type===16){const f=target(n,'fin',[17],true);test(f?.values.edge===n.index,`edge ${n.index}: fin owner`);if(f){const other=m.get(f.values.other);test(other?.values.other===f.index,`edge ${n.index}: two-fin ring`);test(other?.values.sense!==f.values.sense,`edge ${n.index}: opposite senses`);}}
     if(n.type===18)target(n,'point',[29],true);
     if(n.type===136||n.type===126){const surf=n.type===126,cv=target(n,'bspline_vertices',[45],true),expected=(surf?v.n_u_vertices*v.n_v_vertices:v.n_vertices)*v.vertex_dim;test(cv?.length===expected,`NURBS ${n.index}: control size`);
-      for(const axis of surf?['u_','v_']:['']){const mult=target(n,axis+'knot_mult',[127],true),knots=target(n,axis+'knots',[128],true);const nk=v[surf?'n_'+axis+'knots':'n_knots'];test(mult?.length===nk&&knots?.length===nk,`NURBS ${n.index}: knot sizes`);if(knots)test(knots.values.knots.every((x,i,a)=>i===0||x>a[i-1]),`NURBS ${n.index}: knot order`);}}
+      for(const axis of surf?['u_','v_']:['']){const mult=target(n,axis+'knot_mult',[127],true),knots=target(n,axis+'knots',[128],true);const nk=v[surf?'n_'+axis+'knots':'n_knots'];// arrays may be allocated past n_knots; the spare slots are 0 / null (EXP-084)
+        const spare=(a,empty)=>!a||a.slice(nk).every(empty);
+        test(mult?.length>=nk&&knots?.length===mult?.length&&spare(mult?.values.mult,x=>x===0)&&spare(knots?.values.knots,x=>x===null||x===0),`NURBS ${n.index}: knot sizes`);if(knots)test(knots.values.knots.slice(0,nk).every((x,i,a)=>i===0||x>a[i-1]),`NURBS ${n.index}: knot order`);}}
   }
   return {checks,errors,rings};
 }

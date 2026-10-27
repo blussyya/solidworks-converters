@@ -54,7 +54,7 @@ test('OpenCascade: every corpus part (tools/validate.js)',needsBoth,t=>{
   const bad=[...(by.failed||[]),...(by['export failed']||[])];
   assert.equal(bad.length,0,bad.map(r=>r.part+': '+r.reason).join('\n'));
   // the three pre-2011 parts have no Parasolid partition we can find (docs/open-questions.md)
-  assert.deepEqual((by.unreadable||[]).map(r=>path.basename(r.part)).sort(),['SW2000-s01.SLDPRT','chainwheel.sldprt','plate4.sldprt']);
+  assert.deepEqual((by.unreadable||[]).map(r=>path.basename(r.part)).sort(),['SW2000-s01.SLDPRT']);
   assert((by['matches SolidWorks']||[]).length>=64);
   t.diagnostic(Object.entries(by).map(([k,v])=>`${k} ${v.length}`).join(', '));
   fs.rmSync(out,{recursive:true,force:true});

@@ -46,12 +46,18 @@ const commands={
   if(has(a,'--json')){console.log(JSON.stringify(r,null,2));return 0;}
   const L=[];
   L.push(`container   ${r.container}, ${r.bytes} bytes${r.containerError?' — '+r.containerError:''}`);
+  if(r.saved&&r.saved.version){const s=r.saved,c=s.history.find(h=>h.created),d=h=>h.date?` (build ${h.date.year}/${String(h.date.day).padStart(3,'0')})`:'';
+   const last=s.history.length?s.history[s.history.length-1]:null;
+   L.push(`saved in    ${s.release}, version ${s.version}${last&&last.version===s.version?d(last):''}`);
+   if(c&&c.version!==s.version)L.push(`created in  ${c.release}, version ${c.version}${d(c)}`);
+   if(s.error)L.push(`            History not read: ${s.error}`);}
   if(r.displayListsVersion)L.push(`DisplayLists version ${r.displayListsVersion}`);
   if(r.streams)L.push(`streams     ${r.streams.length}`);
   const d=r.display;
   L.push(`display     ${d.errors.length?'not read: '+d.errors.join('; '):`${d.faces} faces, ${d.triangles} triangles (${d.format})`}`);
   if(Object.keys(d.surfaceTags).length)L.push(`surface tags ${Object.entries(d.surfaceTags).map(([k,v])=>`${k}×${v}`).join('  ')}`);
   if(d.rejected)L.push(`            ${d.rejected} candidate face records rejected — output is PARTIAL`);
+  if(d.overlays)L.push(`            ${d.overlays} cosmetic thread band${d.overlays>1?'s':''} (drawn over faces, not exported)`);
   if(r.partitions)for(const p of r.partitions)L.push(`partition   ${p.stream}: ${p.sections.join(' + ')||'none'} (${p.chain})`);
   if(r.brep){const c=r.brep.census,pick=['BODY','SHELL','FACE','LOOP','EDGE','VERTEX'].filter(k=>c[k]).map(k=>`${c[k]} ${k.toLowerCase()}`);
    const surf=Object.entries(c).filter(([k])=>/^(PLANE|CYLINDER|CONE|SPHERE|TORUS|B_SURFACE|SWEPT_SURF|BLENDED_EDGE|OFFSET_SURF|SPUN_SURF)$/.test(k)).map(([k,v])=>`${k.toLowerCase()}×${v}`);
@@ -59,7 +65,7 @@ const commands={
    if(surf.length)L.push(`surfaces    ${surf.join('  ')}`);
    L.push(`graph checks ${r.brep.graphChecks} run, ${r.brep.graphErrors} failed`);}
   else if(r.brepError)L.push(`B-rep       not read: ${r.brepError}`);
-  console.log(L.join('\n'));return 0;
+  console.log(L.join('\n'));return r.container==='not a SolidWorks part'?1:0;
  },
  parse(a){
   const S=require('../src');const r=S.parse(need(a,'parse'));

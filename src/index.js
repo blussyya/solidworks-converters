@@ -18,7 +18,7 @@
  *                                                                    (docs/format/parasolid.md)
  */
 const fs=require('fs'),zlib=require('zlib');
-const modern=require('./container/modern'),ole=require('./container/ole'),blast=require('./container/blast');
+const modern=require('./container/modern'),ole=require('./container/ole'),blast=require('./container/blast'),history=require('./container/history');
 const display=require('./display'),convert=require('./convert');
 const xt=require('./parasolid/xt'),partition=require('./parasolid/partition'),graph=require('./parasolid/topology');
 const stepExport=require('./step/export');
@@ -44,12 +44,16 @@ function parse(input){return display.parseSLDPRT(bytes(input),inflateRaw,inflate
 function info(input){
   const b=bytes(input),legacy=modern.isOLE2(b),out={container:legacy?'OLE2 compound document (legacy)':'modern (SolidWorks 2015+)',bytes:b.length};
   try{
-    if(legacy){const o=ole.read(b);out.streams=o.entries.filter(e=>e.type===2).map(e=>({name:e.name,bytes:e.size}));}
-    else{const s=modern.decompressOpenSX(b,inflateRaw,inflateZlib);out.streams=Object.keys(s).map(k=>({name:k,bytes:s[k].length}));out.displayListsVersion=modern.displayListsVersion(s);}
+    if(legacy){const o=ole.read(b),st=o.entries.filter(e=>e.type===2);out.streams=st.map(e=>({name:e.name,bytes:e.size}));
+      out.saved=history.saved(o.entries.map(e=>e.name),n=>o.stream(st.find(e=>e.name===n)));}
+    else{const s=modern.decompressOpenSX(b,inflateRaw,inflateZlib);out.streams=Object.keys(s).map(k=>({name:k,bytes:s[k].length}));out.displayListsVersion=modern.displayListsVersion(s);
+      // an STL, STEP or anything else has no compressed streams at all
+      if(!out.streams.length){out.container='not a SolidWorks part';throw Error('no OLE2 header and no compressed streams');}
+      out.saved=history.saved(Object.keys(s),n=>s[n]);}
   }catch(e){out.containerError=e.message;}
   const d=display.parseSLDPRT(b,inflateRaw,inflateZlib);
   const tags={};for(const f of d.faces)if(f.metadata)tags[f.metadata.typeTag]=(tags[f.metadata.typeTag]||0)+1;
-  out.display={format:d.format,faces:d.faces.length,triangles:d.stats?d.stats.triangles:0,surfaceTags:tags,rejected:(d.rejected||[]).length,warnings:(d.warnings||[]).length,errors:d.errors};
+  out.display={format:d.format,faces:d.faces.length,triangles:d.stats?d.stats.triangles:0,surfaceTags:tags,rejected:(d.rejected||[]).length,overlays:(d.overlays||[]).length,warnings:(d.warnings||[]).length,errors:d.errors};
   try{out.partitions=partition.survey(b).map(r=>({stream:r.stream,chain:r.chain,sections:r.sections.map(s=>s.kind)}));}catch(e){out.partitionError=e.message;}
   try{const r=readBrep(b);out.brep={source:r.source,schema:r.parsed.header&&r.parsed.header.schema,nodes:r.parsed.nodes.length,census:graph.census(r.parsed),graphChecks:r.graph.checks,graphErrors:r.graph.errors.length,error:r.parsed.error};}
   catch(e){out.brepError=e.message;}

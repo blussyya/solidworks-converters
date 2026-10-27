@@ -56,10 +56,20 @@
     }
     const magic=[35,29,213,113,218,129,72,162,168,88,152,178,27,137,239,153];
     if(raw.length<30||!magic.every((x,i)=>raw[i]===x))throw Error('Unsupported legacy DisplayLists wrapper');
-    const d=new DataView(raw.buffer,raw.byteOffset,raw.byteLength),size=d.getUint32(16,true),packed=d.getUint32(20,true);
-    if(size>MAX||packed!==raw.length-32||raw.subarray(raw.length-8).some(x=>x!==0))throw Error('Invalid legacy compression lengths');
-    const bytes=new Uint8Array(inflate(raw.subarray(24,24+packed)));
-    if(bytes.length!==size)throw Error('Legacy decompressed length mismatch');
+    // GUID, then chunks (u32 inflated, u32 compressed, zlib) up to 8 zero bytes: the partition
+    // section frame without its size. Over 1 MiB the output is split into chunks (EXP-084).
+    const d=new DataView(raw.buffer,raw.byteOffset,raw.byteLength),end=raw.length-8,parts=[];let p=16,total=0;
+    if(raw.subarray(end).some(x=>x!==0))throw Error('Invalid legacy compression lengths');
+    while(p<end){
+      if(p+8>end)throw Error('Invalid legacy compression lengths');
+      const size=d.getUint32(p,true),packed=d.getUint32(p+4,true);
+      if(!packed||p+8+packed>end||total+size>MAX)throw Error('Invalid legacy compression lengths');
+      const z=new Uint8Array(inflate(raw.subarray(p+8,p+8+packed)));
+      if(z.length!==size)throw Error('Legacy decompressed length mismatch');
+      parts.push(z);total+=size;p+=8+packed;
+    }
+    let bytes=parts[0];
+    if(parts.length!==1){bytes=new Uint8Array(total);let at=0;for(const z of parts){bytes.set(z,at);at+=z.length;}}
     return {bytes,stream:e.name,compressed:true};
   }
   return {read,displayLists,MAX_BYTES:MAX};
