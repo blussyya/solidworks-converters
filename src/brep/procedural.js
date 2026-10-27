@@ -46,6 +46,9 @@ function resolve(N,opts){
     if(s.type==='blend'){
       const r=Fit.blendSurface(s,f,N,{tolerance:tol});
       out=r.surface;report.fittedSurfaces++;report.errors.surface=Math.max(report.errors.surface,r.error);
+    }else if(s.type==='offset'&&s.basis&&s.basis.type==='blend'){
+      // an offset of a blend (2013 head_back has 144 of them): the blend underneath is fitted too
+      out={...s,basis:surface(s.basis,f)};
     }else if(s.type==='blendBound')throw Error('resolve: face '+f.id+' lies on a blend boundary surface');
     surfMemo.set(s,out);return out;
   }
