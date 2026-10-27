@@ -1,6 +1,6 @@
 {
- "note": "sha256 of the canonical JSON of the display parse of every corpus file, produced by parser/v0.3 (dump 94478c8). Any change here is a change in parser output. Regenerated 2026-10-03 for the three pre-2011 originals only (EXP-077: DisplayLists__Zip and the Parasolid-9 layout are now read); the other 70 outputs are unchanged.",
- "generated": "2026-10-02",
+ "note": "sha256 of the canonical JSON of the display parse of every corpus file, produced by parser/v0.3 (dump 94478c8). Any change here is a change in parser output. Regenerated 2026-10-03 for the three pre-2011 originals only (EXP-077: DisplayLists__Zip and the Parasolid-9 layout are now read); the other 70 outputs are unchanged. Regenerated 2026-10-27 for all files: the parse result gained an overlays list (cosmetic-thread bands, EXP-084), empty for every corpus file; with it removed, all 73 outputs are identical to the previous record.",
+ "generated": "2026-10-27",
  "files": [
   {
    "file": "test files new/SW2011/C00_cube_10mm/model.SLDPRT",
@@ -9,7 +9,7 @@
    "faces": 6,
    "triangles": 12,
    "errors": [],
-   "output": "e74bad905bc1f4d0889a992c05365d86c8c29505863df9e5ddffd3b68e40e1d3"
+   "output": "2ee3c15c663177dbf4183f3a8683675b2bdf1e20096abf3e4c92e55ae7f78f12"
   },
   {
    "file": "test files new/SW2011/C01_cube_20mm/model.SLDPRT",
@@ -18,7 +18,7 @@
    "faces": 6,
    "triangles": 12,
    "errors": [],
-   "output": "ed2c8a15267a27bdec95fbb204186108840b9d14d743fe03c8749ec1f877b3e5"
+   "output": "e4f68f26a9aa3046eefdd3b048a22f75236dffb1b5a670d2a5224699f00d314b"
   },
   {
    "file": "test files new/SW2011/C02_cube_translated/model.SLDPRT",
@@ -27,7 +27,7 @@
    "faces": 6,
    "triangles": 12,
    "errors": [],
-   "output": "073ca55b5256d26cf46126e6ffc4736a9e986859981c17353ec48512bc134b10"
+   "output": "727e77312d317f29bb32bb24cefc1b2a79bc355a9683589916ad0639dbb6e265"
   },
   {
    "file": "test files new/SW2011/C03_cube_fillet_1mm/model.SLDPRT",
@@ -36,7 +36,7 @@
    "faces": 7,
    "triangles": 36,
    "errors": [],
-   "output": "0821fb675702443962ce1efd4b9448ffbfb08291bb49212db4698bbbcacc9498"
+   "output": "c01e7786443476ca9bcfdfe901798251b7c888b6eb930803c416137040df141f"
   },
   {
    "file": "test files new/SW2011/C04_cube_hole_5mm/model.SLDPRT",
@@ -45,7 +45,7 @@
    "faces": 7,
    "triangles": 152,
    "errors": [],
-   "output": "c9421eb4834b87b58c1935ea12eb7132016c615decb390b1e1095c41e8f64cb0"
+   "output": "54d94eb779cba0293ecd62f6349e59f92d8f4449b81922623d34e94a9eb83f5a"
   },
   {
    "file": "test files new/SW2011/C05_cube_hole_3mm/model.SLDPRT",
@@ -54,7 +54,7 @@
    "faces": 7,
    "triangles": 128,
    "errors": [],
-   "output": "4361c8da1d1325d1a4df691a60254f694645e3e7087b9f423e95a1327529fd5b"
+   "output": "905c067f565917430c467cf13949c0f129a0436373e9277ccf2ea555810bb620"
   },
   {
    "file": "test files new/SW2011/C06_cube_hole_moved/model.SLDPRT",
@@ -63,7 +63,7 @@
    "faces": 7,
    "triangles": 152,
    "errors": [],
-   "output": "b490ee122b96c8ff3b3e6da3499657c16d15e0cc915d3ac900d6d925143027b5"
+   "output": "b7ed63e64e192d1808655adb3cf68c7c961de623d26d8b82693c9e372015e4af"
   },
   {
    "file": "test files new/SW2011/C07_cube_two_holes/model.SLDPRT",
@@ -72,7 +72,7 @@
    "faces": 8,
    "triangles": 292,
    "errors": [],
-   "output": "519e3aae9f18c4f518e6ee058275a8dd670a5c37307b7e41174640e7f439851e"
+   "output": "04e450409aea1f7983590e80e28c16945eed0903828de0926fad32bc4359eb64"
   },
   {
    "file": "test files new/SW2011/C08_cube_second_hole_modified/model.SLDPRT",
@@ -81,7 +81,7 @@
    "faces": 8,
    "triangles": 268,
    "errors": [],
-   "output": "8fb7515020cf1c3f33ed64925d14f27a76a087fd95a208932853ba25a05031c0"
+   "output": "0a4a9bfad7c4463ca0af1d9d052c7bf9c2f07e5f28454134ebd74d37dc78461b"
   },
   {
    "file": "test files new/SW2011/C09_cube_chamfer_1mm/model.SLDPRT",
@@ -90,7 +90,7 @@
    "faces": 7,
    "triangles": 16,
    "errors": [],
-   "output": "70d62446a36e6aaee552168192a5e548b153ed0b992e6ca1370edaa7e28dd4bf"
+   "output": "814226d6c032e2cc947586566e383dc6e93560413a0e9c124f21c52c4097b842"
   },
   {
    "file": "test files new/SW2011/C10_cube_shell_1mm/model.SLDPRT",
@@ -99,7 +99,7 @@
    "faces": 11,
    "triangles": 28,
    "errors": [],
-   "output": "31d9f2ff7f8053339fb5f4aaf493f872a23e32c2bd0568096e6c0b3dad8dd2de"
+   "output": "f9261edc6b78f3f85bc748dcd7da363e088c5a622986cf0f719b472cee136e0e"
   },
   {
    "file": "test files new/SW2011/C11_cube_hole_4mm/model.SLDPRT",
@@ -108,7 +108,7 @@
    "faces": 7,
    "triangles": 144,
    "errors": [],
-   "output": "c515bf5f208957069f04ae080fdf630cb745084aad6c1697e38ef0caa06bfc93"
+   "output": "43e77729325d51d25f62a1cd03ec151ccd5ac8d42aa012f5cd8fdeb90715ac7f"
   },
   {
    "file": "test files new/SW2011/C12_cube_fillet_1mm_edge2/model.SLDPRT",
@@ -117,7 +117,7 @@
    "faces": 7,
    "triangles": 36,
    "errors": [],
-   "output": "3ad4f1fc8400634d5551c05d35fd5aed68e3579f0a1c9e3531b5e5c18c464e34"
+   "output": "29c7510f382f860773c5dd2b72c2ed5241e5614a3a81f40207584d43c750b052"
   },
   {
    "file": "test files new/SW2011/C13_cone/model.SLDPRT",
@@ -126,7 +126,7 @@
    "faces": 2,
    "triangles": 94,
    "errors": [],
-   "output": "f45697f64b88f72603bd0988fd446ca886b5503db88c6410c82fef06123b1cd7"
+   "output": "79ac94536a386d164aaad46eb1ac709ee25bac4a48a51e768e2347f506c7d100"
   },
   {
    "file": "test files new/SW2011/C14_sphere/model.SLDPRT",
@@ -135,7 +135,7 @@
    "faces": 1,
    "triangles": 4488,
    "errors": [],
-   "output": "3e931b404fd927c05253ae1de1a2baaba0d629274496df5abcc84927c27bcecb"
+   "output": "16f99322b71c043f37940ca11dfb8d38df67e2b04a0ab242faf8d4632a05403a"
   },
   {
    "file": "test files new/SW2011/C15_torus/model.SLDPRT",
@@ -144,7 +144,7 @@
    "faces": 1,
    "triangles": 5920,
    "errors": [],
-   "output": "8537c73b72a412d92af4065b4262beb52e4233d96fd9eef922fbe9ea8bdbb5b1"
+   "output": "8143968250e5080a90ade8fc3815e946595500c30d8abf37e9977c4406b34050"
   },
   {
    "file": "test files new/SW2011/C16_loft_spline/model.SLDPRT",
@@ -153,7 +153,7 @@
    "faces": 6,
    "triangles": 1796,
    "errors": [],
-   "output": "96dca57b8b58790db2884b526b562da2db96666252a7a77dc1693fbe3a7f4e1b"
+   "output": "2c1106d9fdca87f06fa2f5a01f04725db3de8fa837d7ebaec1b08be9a7da900a"
   },
   {
    "file": "test files new/SW2011/C17_torus_quarter/model.SLDPRT",
@@ -162,7 +162,7 @@
    "faces": 3,
    "triangles": 2970,
    "errors": [],
-   "output": "2070066697b0ae6f51486df32f1ae9bf845d9fbef30863746fd8b6a338d3924b"
+   "output": "3ceda2d165755ae504bebe18af04547585cad65978ab4f2fbc113a0d77f01cd6"
   },
   {
    "file": "test files new/SW2011/C18_cube_split_line/model.SLDPRT",
@@ -171,7 +171,7 @@
    "faces": 7,
    "triangles": 16,
    "errors": [],
-   "output": "8efd0095b20edd71421337219242b4f24575864414769fabff5c0ac955b779b5"
+   "output": "2ca207de8f1c1f131e5dfc35ecadec07a63f05c11b8c8fbda258ad49971f4e49"
   },
   {
    "file": "test files new/SW2011/C19_half_cylinder/model.SLDPRT",
@@ -180,7 +180,7 @@
    "faces": 4,
    "triangles": 104,
    "errors": [],
-   "output": "5f0a12a5e4a170ea86c184ff5ee0981abe8e27633f8c1736d7714ad5c5096310"
+   "output": "1e0e178a9308532613c70e3cd299b8794d2c721ed0bdf95df98ef4b26f671f70"
   },
   {
    "file": "test files new/SW2011/C20_cylinders_crossed/model.SLDPRT",
@@ -189,7 +189,7 @@
    "faces": 8,
    "triangles": 686,
    "errors": [],
-   "output": "c7206f6bc3886ff459f693103dffc0c6e170e23620d786d59e7c63cae61f9435"
+   "output": "df474c310c83eeaf6fa3dcea2d8d43e8be9caf88e107b2ccc90a312fe025ea38"
   },
   {
    "file": "test files new/SW2011/C21_cylinder_fillet/model.SLDPRT",
@@ -198,7 +198,7 @@
    "faces": 4,
    "triangles": 1404,
    "errors": [],
-   "output": "906bebf605565cbb2c94ebe8f717f02b206c7df78eea90909ef3c8ff7906264d"
+   "output": "061e47d652e28cf13e45e924e9d85208d11d2cd9cc73fdd5411c5d35d9866671"
   },
   {
    "file": "test files new/SW2011/C22_cube_sw2011_native/model.SLDPRT",
@@ -207,7 +207,7 @@
    "faces": 6,
    "triangles": 12,
    "errors": [],
-   "output": "03d25233c36a8d4442bba40b4b47cb885375c7223c8da5153b926b16c5ea6014"
+   "output": "0557b3b84235dcd1a15d9096b115e2b840322711167a9f6004d30a32f3ea2c62"
   },
   {
    "file": "test files new/SW2011/C25_cone_sw2011_native/model.SLDPRT",
@@ -216,7 +216,7 @@
    "faces": 2,
    "triangles": 94,
    "errors": [],
-   "output": "5086faf3823dfe0cf43ad7f523761cfaf463d2b17e788aeafca84b86082d0ea9"
+   "output": "94828c8411ddb0b7941565006a9347f8474b261e5596dafeb9e8fcc5a2d90c9e"
   },
   {
    "file": "test files new/SW2011/C26_cube_hole_sw2011_native/model.SLDPRT",
@@ -225,7 +225,7 @@
    "faces": 7,
    "triangles": 152,
    "errors": [],
-   "output": "d50a4c1fd5529968546a3afd6c47519a94b9ef16c3710062307360de6563b38f"
+   "output": "effee49df99d8c6f5ca727d8a321cd32e2204825713c85edce2a4c35bea42b38"
   },
   {
    "file": "test files new/SW2022/C00_cube_10mm/model.SLDPRT",
@@ -234,7 +234,7 @@
    "faces": 6,
    "triangles": 12,
    "errors": [],
-   "output": "775064f6e1f953346e385bad87cfa5ce024ed75f08b809d465b5534604078319"
+   "output": "d807cc76b15fa515e1e08cb782aae9c07e033c6288cad26ab1069024f048e405"
   },
   {
    "file": "test files new/SW2022/C01_cube_20mm/model.SLDPRT",
@@ -243,7 +243,7 @@
    "faces": 6,
    "triangles": 12,
    "errors": [],
-   "output": "e7d15ad750d6e55958a5303efe5316d714a74bce413b7854983f8fc43c0bf3a5"
+   "output": "6222e144c34f81057e19e723fa54c18ea332df6696ac9179571e328d6dfc2b7f"
   },
   {
    "file": "test files new/SW2022/C02_cube_translated/model.SLDPRT",
@@ -252,7 +252,7 @@
    "faces": 6,
    "triangles": 12,
    "errors": [],
-   "output": "ff7fca5023b356d7fad207a1b22bc63513871a053c48f9abf4fe3837c1dee1c3"
+   "output": "758c4f10cae102b447f73d54b4b4376ce9ec413a7c310f1897742cb5e8fd15e9"
   },
   {
    "file": "test files new/SW2022/C03_cube_fillet_1mm/model.SLDPRT",
@@ -261,7 +261,7 @@
    "faces": 7,
    "triangles": 36,
    "errors": [],
-   "output": "19fd21034e2996ff319b8903f3ddd5af247610c6c765960315935c165039fb54"
+   "output": "f9da0f1868969f9ee97596ab2b430aec6aa181da776ddb4c48f627a4af1f9d21"
   },
   {
    "file": "test files new/SW2022/C04_cube_hole_5mm/model.SLDPRT",
@@ -270,7 +270,7 @@
    "faces": 7,
    "triangles": 152,
    "errors": [],
-   "output": "cdf792ef4dd857e7e4c44146f4d9a552fb4f171d16d5ef2c2b82502e32c20da2"
+   "output": "5ae8b2122397edf87141021867b768f1c6e2ed6dbb7a02f0b18022166b4c1ef4"
   },
   {
    "file": "test files new/SW2022/C05_cube_hole_3mm/model.SLDPRT",
@@ -279,7 +279,7 @@
    "faces": 7,
    "triangles": 128,
    "errors": [],
-   "output": "e3d1348100285c93ac9219cf77e0ffc72bd4699654b422263876d3564eb70d17"
+   "output": "17bd11fd9bcdd97c054dcb7241eb0859212760a12b62cfc2e9b8fe72fb7a94ca"
   },
   {
    "file": "test files new/SW2022/C06_cube_hole_moved/model.SLDPRT",
@@ -288,7 +288,7 @@
    "faces": 7,
    "triangles": 152,
    "errors": [],
-   "output": "13098e331322d46920b49b071f7d81a18414a8471a09ae612a3a0359c1d9dd48"
+   "output": "86c7457308e7d31bdf63aa9c2cd6e15af91c59ca87d60be13aa5f5bd20f680b5"
   },
   {
    "file": "test files new/SW2022/C07_cube_two_holes/model.SLDPRT",
@@ -297,7 +297,7 @@
    "faces": 8,
    "triangles": 292,
    "errors": [],
-   "output": "f4a82d9f34e7484b3f3a8457588ac461a9ab00460b43f0cbf9f9f115c4dc7f3d"
+   "output": "e2e8886a51baf2b30ead36d19742f90b857f8fbb205452ab1b619b579fec0613"
   },
   {
    "file": "test files new/SW2022/C08_cube_second_hole_modified/model.SLDPRT",
@@ -306,7 +306,7 @@
    "faces": 8,
    "triangles": 268,
    "errors": [],
-   "output": "473324bb7a2c38b68fd8f9048a9ab4e412e06a77403398dfff2ebdfe8caaa31b"
+   "output": "3a7e71139d1aed371405a78541985833228194de7c045c2c1f91b3dfa3c9e104"
   },
   {
    "file": "test files new/SW2022/C09_cube_chamfer_1mm/model.SLDPRT",
@@ -315,7 +315,7 @@
    "faces": 7,
    "triangles": 16,
    "errors": [],
-   "output": "1440acc241ab7d31164698cb52c6f9ef29349dff9253264d1abf9491cefa95a7"
+   "output": "233af4ad0b611ea35ee8d7e0c9d692f06191c47a8fc35a286fbfc563d7a92fe0"
   },
   {
    "file": "test files new/SW2022/C10_cube_shell_1mm/model.SLDPRT",
@@ -324,7 +324,7 @@
    "faces": 11,
    "triangles": 28,
    "errors": [],
-   "output": "d0d6aba5367450496974c9231404cd37a5bc9463ef318f668bd221289c7cf666"
+   "output": "c2083d5e3dba65c3878d7abc5503047d03dd22cc0e54185e8e72b7c202866854"
   },
   {
    "file": "test files new/SW2022/C11_cube_hole_4mm/model.SLDPRT",
@@ -333,7 +333,7 @@
    "faces": 7,
    "triangles": 144,
    "errors": [],
-   "output": "38b2d62d41f15ec7aa51e0f9242ef88a98ba25d6074b04df06dbc7093121b389"
+   "output": "e53187dc41af6069105090fa07663604de06e4d2ff579dd82fb3c423a3a2d0dc"
   },
   {
    "file": "test files new/SW2022/C12_cube_fillet_1mm_edge2/model.SLDPRT",
@@ -342,7 +342,7 @@
    "faces": 7,
    "triangles": 36,
    "errors": [],
-   "output": "3f9446a823847ccc15f1f8389ad3a0275dbbb1ade281f81806f11b1db271f685"
+   "output": "8a279a40cd8c5a4bdd797b7f58716641df6222c419ff8ced3f438e87b4d2ef02"
   },
   {
    "file": "test files new/SW2022/C13_cone/model.SLDPRT",
@@ -351,7 +351,7 @@
    "faces": 2,
    "triangles": 96,
    "errors": [],
-   "output": "59019207bb0be08e3e36e0cfdbd1cd5fa986dfe5c678641279477eaaaad59e01"
+   "output": "e8558fc96d7ccd4e165ec073519e26934e9d828d7257e762bcccdcba29c6fbf0"
   },
   {
    "file": "test files new/SW2022/C14_sphere/model.SLDPRT",
@@ -360,7 +360,7 @@
    "faces": 1,
    "triangles": 4488,
    "errors": [],
-   "output": "76476a70ef16a90bfa18489038df5f64fca9945dd86f196879deba2868ffa270"
+   "output": "481eae18422114bd1ce83c5c98d23412a62b788432de7ee64ef1460a43357ac3"
   },
   {
    "file": "test files new/SW2022/C15_torus/model.SLDPRT",
@@ -369,7 +369,7 @@
    "faces": 1,
    "triangles": 5920,
    "errors": [],
-   "output": "2810615a3f73a42928b98bb86071b604f4ba4f9cc9c97fba40130610642da314"
+   "output": "e73fae6119d05422b3800129b4334a21b652e83b7f82ddb45bb4e8b75906d602"
   },
   {
    "file": "test files new/SW2022/C16_loft_spline/model.SLDPRT",
@@ -378,7 +378,7 @@
    "faces": 6,
    "triangles": 1604,
    "errors": [],
-   "output": "3416a98ecc01da915d3b7eb03cb3d5d9f070a36d598aedf54974f6f373904948"
+   "output": "b19f7ddd03fd5ba2ea23a4b5c25826a939668a21afd8b44dc88c7fb3a35c4531"
   },
   {
    "file": "test files new/SW2022/C17_torus_quarter/model.SLDPRT",
@@ -387,7 +387,7 @@
    "faces": 3,
    "triangles": 2974,
    "errors": [],
-   "output": "c1310cf3ba687b9d6f07aacfa5542b156914baf98b30c5826935a96d43b48b4c"
+   "output": "61e68c4c839f4c1f68ed294b70e2200839c13852bb756c9a8ea3ceaea6060836"
   },
   {
    "file": "test files new/SW2022/C18_cube_split_line/model.SLDPRT",
@@ -396,7 +396,7 @@
    "faces": 7,
    "triangles": 16,
    "errors": [],
-   "output": "8e867f93729763eb1b89507044e5af90b2c7eab7e33d97b4634d81a60b04fcb3"
+   "output": "ab9736d5111aaa4ae0abec817aa19b80907b64801267e9f6647607cf78aa0778"
   },
   {
    "file": "test files new/SW2022/C19_half_cylinder/model.SLDPRT",
@@ -405,7 +405,7 @@
    "faces": 4,
    "triangles": 104,
    "errors": [],
-   "output": "a7aebc43276cb4a9873adb0dadce89057c2161fb66d1a677e045a442e35c7b65"
+   "output": "265b2843e9a1e17f07085ea0455d8b16124e16a9b0e7468e9960873a97990832"
   },
   {
    "file": "test files new/SW2022/C20_cylinders_crossed/model.SLDPRT",
@@ -414,7 +414,7 @@
    "faces": 8,
    "triangles": 596,
    "errors": [],
-   "output": "da128d02d0de736ed195768abe98aaa4d07162f8f5c85f392a6622d6abcdda83"
+   "output": "a258b759fc7af4f1cabbf0dbd6e2a10d8973cc2967074318ce7ec14dca314169"
   },
   {
    "file": "test files new/SW2022/C21_cylinder_fillet/model.SLDPRT",
@@ -423,7 +423,7 @@
    "faces": 4,
    "triangles": 1408,
    "errors": [],
-   "output": "5d9c500da42b9015fe5cd53d8381049a8311ae8ed4a9333b7522ab0da6c7be3a"
+   "output": "880eb7002df5166d813012f797b2593ef8d786648578f51dd0cc35b9417caca8"
   },
   {
    "file": "test files new/SW2022/C23_cube_sw2011_to_2022/model.SLDPRT",
@@ -432,7 +432,7 @@
    "faces": 6,
    "triangles": 12,
    "errors": [],
-   "output": "1c95445503a48e5687f73206b6fa80e8283fd926a7f3b6895dea4cba16d8410f"
+   "output": "2ec337b1b661e5626498acd3416d10195c6cea659d4fad738be54bac2466e2f0"
   },
   {
    "file": "test files new/SW2022/C24_cube_sw2022_native/model.SLDPRT",
@@ -441,7 +441,7 @@
    "faces": 6,
    "triangles": 12,
    "errors": [],
-   "output": "69edb624e5c20c83b73b697c2811f6ae0d79070951b09c301f165e739301fefd"
+   "output": "8aa832a833552f1ca9b18088ac114a8f95a5d1cb7e2f03844c25f084bc362193"
   },
   {
    "file": "test files original/chainwheel.sldprt",
@@ -450,7 +450,7 @@
    "faces": 189,
    "triangles": 2924,
    "errors": [],
-   "output": "dd4888978c4e059eb13a4b4280ea01420f8e3d08fe8068e636aa01ce184e707c"
+   "output": "e69227a3d4d07c3ddce5ac466fe7cd72128dae495328d87a56cf962d1fe6db5c"
   },
   {
    "file": "test files original/controlled/C00_cube_10mm/model.SLDPRT",
@@ -459,7 +459,7 @@
    "faces": 6,
    "triangles": 12,
    "errors": [],
-   "output": "2b8e7f173b646382ed328e20a5fe7e1a4afbe57a2c1a8e247512506bb72545dd"
+   "output": "3d5183b9a30b46ad276072ac03a4c5fd5a8f4627a39a12d9234ac1af77c8d036"
   },
   {
    "file": "test files original/controlled/C01_cube_20mm/model.SLDPRT",
@@ -468,7 +468,7 @@
    "faces": 6,
    "triangles": 12,
    "errors": [],
-   "output": "034ec481d0bb38119b3e3a50a3bd2634c7e88e42e268edc14c9e819873efbb66"
+   "output": "f46c88e648bb126797c4815ed62b7b12589d427da12b49bf67a81c3e4ac24e4c"
   },
   {
    "file": "test files original/controlled/C02_cube_translated/model.SLDPRT",
@@ -477,7 +477,7 @@
    "faces": 6,
    "triangles": 12,
    "errors": [],
-   "output": "d320b4158540f191e42ad47e6b12f2f2bee0ac02f4da38f4327d5c60318a4f02"
+   "output": "48e952d1078bfeac9934ef1668d7673b9e8555d0aadae3cb81c6dbe95b72f47c"
   },
   {
    "file": "test files original/controlled/C03_cube_fillet_1mm/model.SLDPRT",
@@ -486,7 +486,7 @@
    "faces": 7,
    "triangles": 36,
    "errors": [],
-   "output": "13a660b39db9a81e96e22cbf5042687498a3ad6db693838d79ef369cfe7b1987"
+   "output": "27e850adbc1be8b2a202217d3deed5080b799165d459a69cfce99edf5e93d1f5"
   },
   {
    "file": "test files original/controlled/C04_cube_hole_5mm/model.SLDPRT",
@@ -495,7 +495,7 @@
    "faces": 7,
    "triangles": 152,
    "errors": [],
-   "output": "f3bfb82bbf4bce80894c698d0a0f1ab496346e76f9c2fd968a4ee36408035f72"
+   "output": "df8efaf29ec2acd6556b3bae0030f47305d1052b1c81e4531783dfeedd5e3079"
   },
   {
    "file": "test files original/controlled/C05_cube_hole_3mm/model.SLDPRT",
@@ -504,7 +504,7 @@
    "faces": 7,
    "triangles": 124,
    "errors": [],
-   "output": "385d48055dfd9d9ca39c2f29c932d315e73f5842623f51a8db7673f1b1567682"
+   "output": "e71e4218b0c7db1b13125deb855cb1bd50c5b6e8a1d1deaf8ed51765e5fc3ddc"
   },
   {
    "file": "test files original/controlled/C06_cube_hole_moved/model.SLDPRT",
@@ -513,7 +513,7 @@
    "faces": 7,
    "triangles": 152,
    "errors": [],
-   "output": "0a0c863b7f7f30dcb2f854dcd2a762d09ecc93b736b5b4a5fc9229f637551aa5"
+   "output": "1be2535dbde2f4f5cec408dc52f0c04188ab7d679e21b3edb234ea97ed20763f"
   },
   {
    "file": "test files original/controlled/C07_cube_two_holes/model.SLDPRT",
@@ -522,7 +522,7 @@
    "faces": 8,
    "triangles": 292,
    "errors": [],
-   "output": "41cbc3bc8db5496800638362d1d3e1c55ff58ad9f0aa39e31ff9a9b62c8b411d"
+   "output": "cc8916f75f81fe98c343e9a2574ebfd1ea68b97a8437efcfa90d2f16df3e6e26"
   },
   {
    "file": "test files original/controlled/C08_cube_second_hole_modified/model.SLDPRT",
@@ -531,7 +531,7 @@
    "faces": 8,
    "triangles": 264,
    "errors": [],
-   "output": "92e3de38e383e3a687b2c160476ccb8ce5e045430d4a438a6f8dedbc6b3e72a9"
+   "output": "5a1029a7e3338f7a7eb112057d83295a1580e960ba0c540c9c52dc069af1c2f1"
   },
   {
    "file": "test files original/controlled/C09_cube_chamfer_1mm/model.SLDPRT",
@@ -540,7 +540,7 @@
    "faces": 7,
    "triangles": 16,
    "errors": [],
-   "output": "59eb4603eae81bbb657801b7758d79db4a1c472fd62694bd1132d7da243a7158"
+   "output": "c51417686a5352960e1147c7b4edfdacf32ba72a2978e24336e29d839c8fcb2e"
   },
   {
    "file": "test files original/controlled/C10_cube_shell_1mm/model.SLDPRT",
@@ -549,7 +549,7 @@
    "faces": 11,
    "triangles": 28,
    "errors": [],
-   "output": "f01f270665590cc798b587b1c214eedab84b534ef9bc1a9c843d2a69318410e7"
+   "output": "25bc3a019a657c3c78aa608970b52e87063162eb80e24fadcf410bfd5bdaacb9"
   },
   {
    "file": "test files original/controlled/C11_cube_hole_4mm/model.SLDPRT",
@@ -558,7 +558,7 @@
    "faces": 7,
    "triangles": 140,
    "errors": [],
-   "output": "e6ed11d26ad46642f5797f5ccc6708de8b4214ce928585fd1a0ee2d7dcb6ae1a"
+   "output": "381a1ac4f7c5d9e816867cae2c77739281db4b39977ac5cf0f1666f06dc815a2"
   },
   {
    "file": "test files original/controlled/C12_cube_fillet_1mm_edge2/model.SLDPRT",
@@ -567,7 +567,7 @@
    "faces": 7,
    "triangles": 36,
    "errors": [],
-   "output": "3510252c1e3cc16aff781ca0be5e9b399de1b86b16135b6511a057dfa9e36580"
+   "output": "9dc4779fc3880e0bcada3aa16230dff9fb236b793c2f0ae5eff8ab50f4f0537b"
   },
   {
    "file": "test files original/cube.SLDPRT",
@@ -576,7 +576,7 @@
    "faces": 6,
    "triangles": 12,
    "errors": [],
-   "output": "42bdaccc8e6bfc3e7d32acbf2d5ba369b6835cd731fb33ea0155d2a2f6d9895f"
+   "output": "a3a2a9d583dce7d11e2931ee885a0790a98f3633d386b0a8c6f9b2fee3263a90"
   },
   {
    "file": "test files original/Dekor.SLDPRT",
@@ -585,7 +585,7 @@
    "faces": 375,
    "triangles": 15282,
    "errors": [],
-   "output": "f14717b6906882c031a0e3334d62e2e11cd4ba0a3ec375bd589f8535f80e314c"
+   "output": "4dd7df9e16d3399d1a7361f44cf27e2d8726b1cea644b53e011c803985f58908"
   },
   {
    "file": "test files original/distributor main boss rev a.SLDPRT",
@@ -594,7 +594,7 @@
    "faces": 51,
    "triangles": 3902,
    "errors": [],
-   "output": "08d2960d0915ef50cd463d091297eab5f53cfce11920f3b03a29bec0d41b8aad"
+   "output": "653d13a7ecff05fa5df5ab2f7eb7d4c5c1c7871d247a019c2427cac8ea22599e"
   },
   {
    "file": "test files original/Helical Bevel Gear.SLDPRT",
@@ -603,7 +603,7 @@
    "faces": 113,
    "triangles": 6042,
    "errors": [],
-   "output": "a105172ef5848da297754744150516cf0cda6520134dea48270afe4835d9214b"
+   "output": "36f1317a5baae3c41cdfa6162a1960d429840fe5da98cb6c5d7a68fe84f77529"
   },
   {
    "file": "test files original/plate4.sldprt",
@@ -612,7 +612,7 @@
    "faces": 14,
    "triangles": 44,
    "errors": [],
-   "output": "ee2d9c614e29f717610f60629943c964d8ab6a7155babe5eb198158d98878f77"
+   "output": "00319dc724a4e809664508b2e65b446a6a3088edc5c3e81c88d4d35badaaf32e"
   },
   {
    "file": "test files original/Pocket Wheel.SLDPRT",
@@ -621,7 +621,7 @@
    "faces": 400,
    "triangles": 17078,
    "errors": [],
-   "output": "f102b38a46d838755aa815e66b334506c2f3c7939d0bbd0fcffa34f7d31b363e"
+   "output": "d56a42c07ebaf62008e8a3d5a4b20ca7fd2a6c790a77374592fb8b645207a511"
   },
   {
    "file": "test files original/PTC GE8080-8.SLDPRT",
@@ -630,7 +630,7 @@
    "faces": 126,
    "triangles": 1192,
    "errors": [],
-   "output": "5f0a3bc78de1652c34845c03d7179cb452f9f9f0e64e34fe4fa6f1b1a61f8604"
+   "output": "6df83810fcf4978baddae5b2f1fbccac9d0cedff0424d9aa32a57e6c00854c3c"
   },
   {
    "file": "test files original/SW2000-s01.SLDPRT",
@@ -641,7 +641,7 @@
    "errors": [
     "No supported face records found"
    ],
-   "output": "315250cae7243fd04de2c0e9f4a19421b204d097a8e2ed32261cb55dcf69d5d1"
+   "output": "c363967b5d970a2cf16404532797f773405ae3c7162fead7cfe6d80d8c0e5c53"
   },
   {
    "file": "test files original/usb hub case (ultimate test)/USB hub case BOTTOM.SLDPRT",
@@ -650,7 +650,7 @@
    "faces": 39,
    "triangles": 1488,
    "errors": [],
-   "output": "690157a06d7d7036607df3f6424d268a09b5727fd72bb7acec92b7e110a5e251"
+   "output": "833c2b96f9164576a6410660f2c4461317687ba4c4571c5d91558d6d3f8c2137"
   },
   {
    "file": "test files original/usb hub case (ultimate test)/USB hub case TOP.SLDPRT",
@@ -659,7 +659,7 @@
    "faces": 68,
    "triangles": 4704,
    "errors": [],
-   "output": "675791c0309ded34b9cabcb9bc929a60a1fd9d07e27163fef047ad6177b3e307"
+   "output": "65f545e7223f68f9497db404986fb61d7a28dd00853365e36ec2d8b141e71e40"
   }
  ]
 }
