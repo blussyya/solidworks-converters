@@ -197,7 +197,12 @@ function contactEdge(e,c,p0,p1,tol){
 /* SP_CURVE: the surface's image of its 2D B-spline. On a plane the image is itself a B-spline. */
 function spcurveEdge(e,c,p0,p1,tol){
   const S=c.surface;
-  const ta=p0?G.curveProject(c,p0).t:G.curveRange(c)[0],tb=p1?G.curveProject(c,p1).t:G.curveRange(c)[1];
+  let ta=p0?G.curveProject(c,p0).t:G.curveRange(c)[0],tb=p1?G.curveProject(c,p1).t:G.curveRange(c)[1];
+  // a projection at a degenerate tip (a blend's u=0 station, where the v parameter is free until
+  // the Newton settles) can return the same parameter for both end vertices; the 2D curve's own
+  // range, oriented by which 3D end is nearer, is then the only usable one
+  if(Math.abs(ta-tb)<=1e-12){const [a,b]=G.curveRange(c);
+    if(p0&&dist(G.curvePoint(c,a),p0)>dist(G.curvePoint(c,a),p1)){ta=b;tb=a;}else{ta=a;tb=b;}}
   let t0=ta,t1=tb;
   if(S.type==='plane'){
     const y=cross(S.n,S.x),c2=c.c2;
@@ -209,9 +214,80 @@ function spcurveEdge(e,c,p0,p1,tol){
   const ss=[];for(let i=0;i<=N;i++)ss.push(lo+(hi-lo)*i/N);
   const fn=t=>G.curvePoint(c,t);
   const ends=p0?(ta<tb?[p0,p1]:[p1,p0]):null;
-  const r=fitPoints(fn,ss,tol,{ends});
-  const [a,b]=G.curveRange(r.curve);
-  return ta<=tb?{curve:r.curve,t0:a,t1:b,error:r.error}:{curve:r.curve,t0:b,t1:a,error:r.error};
+  const finish=r=>{const [a,b]=G.curveRange(r.curve);
+    return ta<=tb?{curve:r.curve,t0:a,t1:b,error:r.error}:{curve:r.curve,t0:b,t1:a,error:r.error};};
+  let out,firstErr=null;
+  try{out=finish(fitPoints(fn,ss,tol,{ends}));}
+  catch(err){firstErr=err;}
+  // Parasolid's own (u,v) for a blended_edge is inherited from a spine we never see: the 2D
+  // curve's u is a scale of Parasolid's choice, not of our reconstructed spine, so the plain fit
+  // can miss by a wide margin. What is exact is the arc direction (v across the section). When
+  // the curve runs along one axis, anchor it on the fitted surface through the edge's vertices.
+  if((!out||out.error>tol)&&S.uRange&&p0&&p1){
+    let alt=null;
+    try{alt=reanchor(S,c,p0,p1,N,tol);}catch(err){if(!firstErr)firstErr=err;}
+    if(alt&&(!out||alt.error<=out.error))out=alt;
+  }
+  if(!out&&ends&&dist(ends[0],ends[1])<Math.max(64*tol,1e-9)){
+    // whole image under the reporting floor: a line between the ends, sag irrelevant
+    out={curve:{type:'bspline',degree:1,knots:[0,0,1,1],weights:null,closed:false,ctrl:[ends[0],ends[1]]},t0:0,t1:1,error:0};}
+  if(!out)throw firstErr||Error('fit: SP-curve edge '+e.id);
+  return out;
+}
+
+/* Re-anchor an SP_CURVE on a fitted blend by its vertices: the edge lies on the blend, so the
+ * section (v-line) or boundary curve (u-line) that passes through both vertices is the curve.
+ * Refit against that, in the fitted surface's own parameters. */
+function reanchor(S,c,p0,p1,N,tol){
+  const [d,z]=G.curveRange(c.c2),M=24,us=[],vs=[];
+  for(let i=0;i<=M;i++){const q=G.curvePoint(c.c2,d+(z-d)*i/M);us.push(q[0]);vs.push(q[1]);}
+  const umin=Math.min(...us),umax=Math.max(...us),vmin=Math.min(...vs),vmax=Math.max(...vs);
+  const uSpan=umax-umin,vSpan=vmax-vmin,K=32;
+  const nearest=(row,q)=>{let best=Infinity;for(const x of row)best=Math.min(best,dist(x,q));return best;};
+  if(uSpan<1e-3){   // constant u: one section, both vertices on its arc
+    const score=t=>{const row=[];for(let j=0;j<=K;j++)row.push(G.surfaceEval(S,t,j/K).p);
+      return nearest(row,p0)+nearest(row,p1);};
+    let bt=0,bs=Infinity;for(let i=0;i<=64;i++){const s=score(i/64);if(s<bs){bs=s;bt=i/64;}}
+    let h=1/64;for(let i=0;i<40;i++){const s1=score(Math.max(0,bt-h/2)),s2=score(Math.min(1,bt+h/2));
+      if(s1<bs){bs=s1;bt=Math.max(0,bt-h/2);}else if(s2<bs){bs=s2;bt=Math.min(1,bt+h/2);}h/=2;}
+    // v anchors: where on the section the two vertices sit (coarse, then a fine pass)
+    const anchors=q=>{let jA=0,dq=Infinity;
+      for(let j=0;j<=K;j++){const s=dist(G.surfaceEval(S,bt,j/K).p,q);if(s<dq){dq=s;jA=j;}}
+      let bv=jA/K,bq=dq;
+      for(let w=-Math.ceil(K/2);w<=Math.ceil(K/2);w++){const v=Math.min(1,Math.max(0,jA/K+w/(K*K)));
+        const s=dist(G.surfaceEval(S,bt,v).p,q);if(s<bq){bq=s;bv=v;}}
+      return bv;};
+    const vA=anchors(p0),vB=anchors(p1);
+    // the 2D curve's own start maps to the anchor whose image sits nearest its start vertex;
+    // when both images are closer to one vertex (a sliver), fall back to the 2D v direction
+    const startV=G.curvePoint(c.c2,d)[1];
+    const fwd=(startV-vmin)*(vmax-vmin)>=0? vA<=vB : vB<=vA;
+    const a0=Math.min(vA,vB),a1=Math.max(vA,vB);
+    const ends=fwd?[p0,p1]:[p1,p0];
+    const r=fitPoints(s=>G.surfaceEval(S,bt,a0+(a1-a0)*s).p,
+      Array.from({length:N+1},(_,i)=>i/N),tol,{ends});
+    const [x,y]=G.curveRange(r.curve);
+    return fwd?{curve:r.curve,t0:x,t1:y,error:r.error}:{curve:r.curve,t0:y,t1:x,error:r.error};
+  }
+  if(vSpan<1e-3){   // constant v: a contact curve along the blend's boundary
+    const vc=vmin===vmax?vmin:(Math.abs(vmin)<=Math.abs(vmax)?vmin:vmax);
+    const anchors=q=>{let bt2=0,dq=Infinity;
+      for(let i=0;i<=256;i++){const s=dist(G.surfaceEval(S,i/256,vc).p,q);if(s<dq){dq=s;bt2=i/256;}}
+      let bvv=bt2,bq=dq;
+      for(let w=-8;w<=8;w++){const t=Math.min(1,Math.max(0,bt2+w/(256*8)));
+        const s=dist(G.surfaceEval(S,t,vc).p,q);if(s<bq){bq=s;bvv=t;}}
+      return bvv;};
+    const tA=anchors(p0),tB=anchors(p1);
+    const startU=us[0],mid=(umin+umax)/2;
+    const fwd=startU<mid?tA<=tB:tB<=tA;
+    const b0=Math.min(tA,tB),b1=Math.max(tA,tB);
+    const ends=fwd?[p0,p1]:[p1,p0];
+    const r=fitPoints(s=>G.surfaceEval(S,b0+(b1-b0)*s,vc).p,
+      Array.from({length:N+1},(_,i)=>i/N),tol,{ends});
+    const [x,y]=G.curveRange(r.curve);
+    return fwd?{curve:r.curve,t0:x,t1:y,error:r.error}:{curve:r.curve,t0:y,t1:x,error:r.error};
+  }
+  return null;
 }
 
 /* ---------------- blends ---------------- */
@@ -310,8 +386,12 @@ function blendSurface(b,face,N,opts){
     us=nu2;secs=ns;
   }
   // sections were interpolated, but the boundary rows must lie on the supports: check them too
-  return {surface:surf,error:Math.max(error,SP.error)};
+  // uRange: the spine range t0..t1 the fit covers, so SP_CURVE pcurves in the blend's raw (u,v),
+  // whose u is the spine curve's own parameter, can be remapped into the fit's [0, 1]; on the
+  // surface object itself, because resolve passes only surf through its memo
+  surf.uRange=[t0,t1];
+  return {surface:surf,error:Math.max(error,SP.error),uRange:[t0,t1]};
 }
 
-return {interp,fitPoints,edgeCurve,blendSurface,corrector,march,nearestParam,spineOf,contact};
+return {interp,fitPoints,edgeCurve,blendSurface,corrector,march,nearestParam,spineOf,contact,reanchor};
 });

@@ -116,7 +116,16 @@ function split(R,opts){
   for(const f of R.faces){
     const loops=f.loops.map(l=>l.coedges.length?{coedges:l.coedges.flatMap(expand)}:{coedges:[],vertex:l.vertex});
     if(!PERIODIC[f.surface.type]){faces.push({...f,source:f.id,loops});continue;}
-    const parts=splitFace(f,loops);
+    let parts;
+    try {
+      parts=splitFace(f,loops);
+    } catch(err) {
+      if(err.message.includes('runs through infinity')) {
+        faces.push({...f,source:f.id,loops});
+        continue;
+      }
+      throw err;
+    }
     if(parts.length>1){stats.split++;stats.pieces+=parts.length;}
     parts.forEach((loops,i)=>faces.push({id:parts.length>1?newId():f.id,source:f.id,surface:f.surface,sameSense:f.sameSense,loops}));
   }
