@@ -80,9 +80,8 @@ const commands={
   if(!Number.isFinite(scale)||scale<=0){console.error('--scale must be a positive number, got '+JSON.stringify(opt(a,'--scale','')));return 2;}
   const mode=has(a,'--faceted')?'faceted':has(a,'--mesh')?'mesh':'exact';
   const out={input:file};let m=null;
-  const mesh=()=>{if(m)return m;const parsed=S.parse(file);
-   if(!parsed.faces||!parsed.faces.length)throw Error('cannot convert: '+(parsed.errors.length?parsed.errors.join('; '):'no faces'));
-   m=C.loadModel(parsed);out.faces=m.faceCount;out.triangles=m.triangleCount;return m;};
+  const mesh=()=>{if(m)return m;
+   m=S.meshModel(file);out.mesh=m.source;out.faces=m.faceCount;out.triangles=m.triangleCount;return m;};
   if(wantStl){const f=opt(a,'--stl',base+'.converted.stl');
    const buf=has(a,'--ascii')?Buffer.from(C.toSTLAscii(mesh(),{scale,name}),'ascii'):C.toSTLBinary(mesh(),{scale});
    fs.writeFileSync(f,buf);out.stl={file:f,bytes:buf.length,format:has(a,'--ascii')?'ascii':'binary'};}

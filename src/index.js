@@ -9,7 +9,9 @@
  *   parse(file)          saved display mesh, per face: strips, triangles, normals, edge IDs,
  *                        surface record, bounding record            (docs/format/displaylists.md)
  *   info(file)           container, streams, versions, counts, partition sections
- *   toSTL(file, opts)    Buffer, binary STL (or {ascii:true} -> string)
+ *   toSTL(file, opts)    Buffer, binary STL (or {ascii:true} -> string), from the saved mesh;
+ *                        a part saved without one is triangulated from the B-rep instead
+ *                        ({tolerance} in metres, default 1e-5)
  *   toSTEP(file, opts)   {text, report}: AP214 from the native B-rep, exact (docs/step.md);
  *                        {mode:'mesh'}: from the display mesh, planes analytic, the rest
  *                        faceted; {mode:'faceted'}: every face as triangles
@@ -23,7 +25,7 @@ const display=require('./display'),convert=require('./convert');
 const xt=require('./parasolid/xt'),partition=require('./parasolid/partition'),graph=require('./parasolid/topology');
 const stepExport=require('./step/export');
 const nativeModel=require('./brep/native'),brepVolume=require('./brep/volume'),stepWriter=require('./step/write'),stepReader=require('./step/read');
-const Procedural=require('./brep/procedural');
+const Procedural=require('./brep/procedural'),Split=require('./brep/split'),tessellate=require('./brep/tessellate');
 
 const MAX=128*1024*1024;
 const inflateRaw=b=>zlib.inflateRawSync(b,{maxOutputLength:MAX});
@@ -60,12 +62,18 @@ function info(input){
   return out;
 }
 
-function model(input){
+/* The saved display mesh, or, when the part was saved without one, the B-rep triangulated
+ * (EXP-084). `source` says which. */
+function model(input,opts){
   const parsed=parse(input);
-  if(!parsed.faces||!parsed.faces.length)throw Error('cannot convert: '+(parsed.errors&&parsed.errors.length?parsed.errors.join('; '):'no faces'));
-  return convert.loadModel(parsed);
+  if(parsed.faces&&parsed.faces.length)return {...convert.loadModel(parsed),source:'display mesh'};
+  const why=parsed.errors&&parsed.errors.length?parsed.errors.join('; '):'no faces';
+  let t;
+  try{t=tessellate.tessellate(Split.split(Procedural.resolve(nativeModel.build(readBrep(input).parsed))),opts||{});}
+  catch(e){throw Error('cannot convert: '+why+'; triangulating the B-rep failed: '+e.message);}
+  return {...tessellate.toMeshModel(t),source:'B-rep tessellation ('+why+')'};
 }
-function toSTL(input,opts){opts=opts||{};const m=model(input);return opts.ascii?convert.toSTLAscii(m,opts):convert.toSTLBinary(m,opts);}
+function toSTL(input,opts){opts=opts||{};const m=model(input,opts);return opts.ascii?convert.toSTLAscii(m,opts):convert.toSTLBinary(m,opts);}
 function toSTEP(input,opts){
   opts=opts||{};const mode=opts.mode||'exact';
   if(mode==='exact'){const r=stepExport.toSTEP(readBrep(input).parsed,opts);return {text:r.text,report:{mode,...r.report}};}
@@ -84,6 +92,6 @@ function readBrep(input,opts){
   return {...r,graph:graph.topology(r.parsed)};
 }
 
-module.exports={parse,info,toSTL,toSTEP,readBrep,volume,inflateRaw,inflateZlib,
+module.exports={parse,info,toSTL,meshModel:model,toSTEP,readBrep,volume,inflateRaw,inflateZlib,
   brep:{model:nativeModel.build,volume:brepVolume.volume},step:{read:stepReader.readBrep,write:stepWriter.write},
   display,convert,container:{modern,ole,blast},parasolid:{xt,partition,topology:graph.topology,census:graph.census}};
