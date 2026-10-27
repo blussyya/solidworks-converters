@@ -147,7 +147,7 @@
       if(legacy)result.warnings.push({message:'Legacy mesh geometry decoded; downstream surface/edge metadata remains uninterpreted'});
       // A part saved without display data still has a DisplayLists stream, holding only lights and
       // view settings; the tessellation classes (uoTempBodyTessData_c ...) are missing (EXP-084).
-      const tess=legacy||container.findAll(dl,new TextEncoder().encode('uoTempBodyTessData_c')).length>0;
+      const tess=legacy||container.findAll(dl,Uint8Array.from('uoTempBodyTessData_c',ch=>ch.charCodeAt(0))).length>0;
       return {format,displayListsLength:dl.length,stream:extracted.stream||'DisplayLists',errors:result.faces.length?[]:[tess?'No supported face records found':'DisplayLists holds no tessellation (saved without display data)'],partial:result.rejected.length>0,...result};
     }catch(e){return {format,faces:[],errors:[e.message],warnings:[],rejected:[]};}
   }
