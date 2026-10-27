@@ -21,12 +21,13 @@
  * ModelHeaders (before about SW2020) get the lowest N; in the corpus their configurations all have
  * the same face count, but that does not make them the same shape.
  *
- * Bodies: the first section of Config-N-Partition. When it holds no solid, the bodies are in
- * Config-N-FeatureBodies/LocalBodies (imported, one body per section) and all of them are added,
- * with the partition's sheets (182/188 parts match the display face count). When the partition has
- * a solid, LocalBodies were the inputs of later features and are left out (5 of 6 parts; the sixth
- * draws its LocalBodies and not its partition solid, which is still open). Last resort: the first
- * section with faces in any other GUID-bearing stream.
+ * Bodies: the first section of Config-N-Partition, plus the bodies in
+ * Config-N-FeatureBodies/LocalBodies (imported, one per section). Of all of them, the ones whose
+ * BODY_IN_LIGHTWEIGHT_PERM attribute is 0 aren't part of the finished part: LocalBodies a later
+ * feature used up, and sheets kept for reference. Those LocalBodies are left out, and partition
+ * bodies are listed in `parsed.hidden` for the model builder to skip. 187 of 188 parts then match
+ * their display face count. Last resort: the first section with faces in any other GUID-bearing
+ * stream.
  *
  * Isomorphic: takes a Uint8Array (a Node Buffer is one) and loads in Node and as a plain browser
  * script (global SLDPRTPartition, after src/inflate.js, src/container/*.js and xt.js). Node
@@ -177,6 +178,20 @@ function legacyBody(all){
 }
 
 /* The saved solid body, parsed. Returns {source, kind, parsed}; throws if no body exists. */
+/* BODY index -> its BODY_IN_LIGHTWEIGHT_PERM value. SolidWorks sets it to 0 on a body that isn't
+ * part of the finished part: an imported body a later feature used up, a surface body kept for
+ * reference. 187 of 188 parts' display face counts agree (EXP-084). Bodies without it count as in. */
+function inPart(q){
+  const by=new Map(q.nodes.map(n=>[n.index,n])),out=new Map();
+  const name=d=>{const n=by.get(d)&&by.get(by.get(d).values.identifier);if(!n)return '';const v=n.values.string;return Array.isArray(v)?v.join(''):v;};
+  for(const a of q.nodes){
+    if(a.type!==81||by.get(a.values.owner)?.type!==12||name(a.values.definition)!=='BODY_IN_LIGHTWEIGHT_PERM')continue;
+    const v=(a.values.fields||[]).map(i=>by.get(i)).find(n=>n&&n.type===82);
+    if(v)out.set(a.values.owner,v.values.values[0]);
+  }
+  return out;
+}
+
 /* Every section in a stream that has other data between its sections (LocalBodies). */
 function embedded(b,codec){
   const out=[];
@@ -188,13 +203,18 @@ function embedded(b,codec){
 }
 
 /* Several parse results as one: each later one's node indices and pointers moved past the
- * previous maximum. Pointer fields hold only node indices (0 = null), so they shift as a whole. */
+ * previous maximum. Pointer fields hold only node indices (0 = null), so they shift as a whole.
+ * node_ids are moved the same way, because each section numbers its own from 1 and the model
+ * builder keys faces and edges by them. */
 function merge(parts){
   const out={...parts[0],nodes:[...parts[0].nodes],unresolved:[...parts[0].unresolved],sections:parts.length};
   for(const q of parts.slice(1)){
     const off=out.nodes.reduce((m,n)=>Math.max(m,n.index),0),sh=i=>i?i+off:i;
+    const idOff=out.nodes.reduce((m,n)=>Math.max(m,typeof n.values.node_id==='number'?n.values.node_id:0,typeof n.values.highest_node_id==='number'?n.values.highest_node_id:0),0);
     for(const n of q.nodes){
       const values={...n.values};
+      if(typeof values.node_id==='number')values.node_id+=idOff;
+      if(typeof values.highest_node_id==='number')values.highest_node_id+=idOff;
       for(const f of new Set(n.pointers.map(p=>p.field)))values[f]=Array.isArray(values[f])?values[f].map(sh):sh(values[f]);
       out.nodes.push({...n,index:n.index+off,values,pointers:n.pointers.map(p=>({...p,target:p.target+off}))});
     }
@@ -214,9 +234,11 @@ function readBody(raw,options={},codec){
   const primary=extractPrimary(raw,all,codec);
   let parsed=parse(primary.inner,true,options),source=primary.name,kind='partition';
   const local=all[primary.name.replace(/^(?:Contents\/)?(Config-\d+)-Partition$/,'$1-FeatureBodies/LocalBodies')];
-  if(!parsed.error&&local&&!parsed.nodes.some(n=>n.type===12&&n.values.body_type===1)){
-    const bodies=embedded(local,codec).map(x=>parse(x.body,true,options)).filter(q=>!q.error&&q.nodes.some(n=>n.type===14));
+  if(!parsed.error){
+    const hidden=[...inPart(parsed)].filter(([,v])=>v===0).map(([b])=>b);
+    const bodies=local?embedded(local,codec).map(x=>parse(x.body,true,options)).filter(q=>!q.error&&q.nodes.some(n=>n.type===14)&&![...inPart(q).values()].includes(0)):[];
     if(bodies.length){parsed=merge([parsed,...bodies]);source=primary.name+' + '+bodies.length+' LocalBodies';kind='partition + local';}
+    if(hidden.length)parsed={...parsed,hidden};
   }
   if(!parsed.error&&!parsed.nodes.some(n=>n.type===14)){
     for(const [k,b] of Object.entries(all)){

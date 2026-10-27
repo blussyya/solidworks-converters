@@ -77,7 +77,7 @@ test('21 modern originals: the body parses; PTC GE8080-8 is found in LocalBodies
     assert.equal(r.error,null,f);assert.deepEqual(topology(r).errors,[],f);
     const d=display.parseSLDPRT(raw,iR,iZ),nf=r.nodes.filter(n=>n.type===14).length;
     assert.equal(nf,d.faces.length,f+': native faces = display faces');
-    if(/PTC GE8080-8/.test(f)){assert.match(b.source,/Config-0-FeatureBodies\/LocalBodies$/);assert.equal(nf,126);}
+    if(/PTC GE8080-8/.test(f)){assert.match(b.source,/^Contents\/Config-0-Partition \+ 1 LocalBodies$/);assert.equal(nf,126);}
     else assert.match(b.source,/Config-0-Partition$/);
     files++;faces+=nf;nodes+=r.nodes.length;
   }

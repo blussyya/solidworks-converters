@@ -120,7 +120,10 @@ function build(parsed){
     else throw Error('B-rep: edge '+e.values.node_id+' has no curve');
     edges.set(e.values.node_id,{id:e.values.node_id,v:start===null&&end===null?null:[start,end],curve:c,sameSense:same,tolerance:e.values.tolerance,pcurves,tolerant:!cn});
   }
+  // bodies SolidWorks marks as not part of the finished part (src/parasolid/partition.js)
+  const hidden=new Set(parsed.hidden||[]),shellBody=s=>s&&node(s).values.body;
   for(const f of parsed.nodes.filter(n=>n.type===14)){
+    if(hidden.has(shellBody(f.values.shell)||shellBody(f.values.front_shell)))continue;
     const sn=node(f.values.surface),loops=[];
     for(let l=f.values.loop;l;l=node(l).values.next){
       const first=node(l).values.fin,co=[];let x=first,guard=0,lone=null;
@@ -131,11 +134,13 @@ function build(parsed){
     faces.push({id:f.values.node_id,surface:surface(f.values.surface),sameSense:sgn(sn.values.sense)*sgn(f.values.sense)>0,loops,shell:f.values.shell,frontShell:f.values.front_shell});
   }
   for(const v of parsed.nodes.filter(n=>n.type===18))vertex(v.index);
+  // a hidden body's edges go with its faces
+  if(hidden.size){const used=new Set(faces.flatMap(f=>f.loops.flatMap(l=>l.coedges.map(c=>c.edge))));for(const id of [...edges.keys()])if(!used.has(id))edges.delete(id);}
 
   // bodies -> regions -> shells. A face belongs to the shell behind it (FACE.shell) with its own
   // orientation, and to the shell in front of it (FACE.front_shell) reversed.
   const bodies=[];
-  for(const b of parsed.nodes.filter(n=>n.type===12)){
+  for(const b of parsed.nodes.filter(n=>n.type===12&&!hidden.has(n.index))){
     const regions=[];
     for(let r=b.values.region,guard=0;r&&guard<1e6;r=node(r).values.next,guard++){
       const rv=node(r).values,shells=[];
