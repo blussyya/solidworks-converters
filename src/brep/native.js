@@ -71,7 +71,15 @@ function build(parsed){
       case 'B_CURVE':out=nurbsCurve(node(v.nurbs));if(out.dim!==3)throw Error('B-rep: 2D B_CURVE used as a 3D curve (node '+i+')');break;
       case 'TRIMMED_CURVE':out={type:'trimmed',basis:curve(v.basis_curve),basisSense:sgn(node(v.basis_curve).values.sense),t0:v.parm_1,t1:v.parm_2,p0:v.point_1,p1:v.point_2};break;
       case 'SP_CURVE':{const c2=nurbsCurve(node(node(v.b_curve).values.nurbs));if(c2.dim!==2)throw Error('B-rep: SP_CURVE with a 3D B-curve (node '+i+')');
-        out={type:'spcurve',surface:surface(v.surface),c2,tolerance:v.tolerance_to_original};break;}
+        out={type:'spcurve',surface:surface(v.surface),c2,tolerance:v.tolerance_to_original};
+        // Parasolid's SPUN_SURF has the profile parameter as u and the angle as v; ours (and STEP's
+        // surface of revolution) the other way round. a4ecc6f5's pcurves land on their vertices
+        // only when swapped (EXP-085).
+        if(out.surface.type==='spun')out.c2={...c2,ctrl:c2.ctrl.map(q=>[q[1],q[0],...q.slice(2)])};
+        // and its CONE has v along the axis (radius r + v tan α), ours along the slant: 35 mm apart on
+        // a4ecc6f5's 79° cone. A B-spline's control points scale with the parameter they stand for.
+        if(out.surface.type==='cone'){const k=1/Math.cos(out.surface.angle);out.c2={...c2,ctrl:c2.ctrl.map(q=>[q[0],q[1]*k,...q.slice(2)])};}
+        break;}
       case 'INTERSECTION':{const ch=node(v.chart).values;
         out={type:'intersection',surfaces:v.surface.map(surface),chart:ch.hvec,chordalError:ch.chordal_error,start:limit(v.start),end:limit(v.end),node:v.node_id};break;}
     }
