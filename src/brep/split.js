@@ -99,7 +99,7 @@ function split(R,opts){
       if(!e.v&&!closedCurve(e.curve)&&G.dist(p,edgePoint(e,0))<1e-9)continue;   // the ring's own start
       xs.push(x);}
     const mk=(f0,f1,a,b)=>{const id=xs.length?newId():e.id;
-      edges.set(id,{id,source:e.id,v:[a,b],curve:e.curve,t0:e.t0+(e.t1-e.t0)*f0,t1:e.t0+(e.t1-e.t0)*f1,sameSense:e.t1>e.t0,pcurves:e.pcurves,fit:e.fit});return id;};
+      edges.set(id,{id,source:e.id,v:[a,b],curve:e.curve,t0:e.t0+(e.t1-e.t0)*f0,t1:e.t0+(e.t1-e.t0)*f1,sameSense:e.t1>e.t0,pcurves:e.pcurves,fit:e.fit,tolerance:e.tolerance});return id;};
     const vx=xs.map(x=>{const id=newId();vertices.set(id,{id,p:edgePoint(e,x),split:true});return id;});
     let ids;
     if(!e.v){

@@ -2,7 +2,7 @@
 /* Exact enclosed volume of a neutral B-rep model, computed from the surfaces and edge curves
  * themselves, without tessellating.
  *
- *   volume(model) -> {volume (m³), faces, unsupported:[...]}
+ *   volume(model, {segments, split, origin}) -> {volume (m³), faces, unsupported:[...]}
  *
  * The model can be a raw native build (src/brep/native.js, curves still data — the unsupported
  * list then names what resolution would have fixed), a resolved one (src/brep/procedural.js,
@@ -148,8 +148,15 @@ function boundarySamplesBspline(face,M,par,segments){
       nodes.forEach(([t,w],i)=>{const j=i+1;
         // (du, dv)/dt from S_u du + S_v dv = P'(t), exact where surface regular; finite differences
         // of the (u,v) chain only where it degenerates (a blend's tip)
-        const e=par.eval(chain[j][0],chain[j][1]),D=G.curveTangent(p.c,t),A=G.dot(e.Su,e.Su),B=G.dot(e.Su,e.Sv),C=G.dot(e.Sv,e.Sv),det=A*C-B*B;
-        if(det>1e-6*A*C){const x1=G.dot(D,e.Su),y1=G.dot(D,e.Sv);pts.push({u:chain[j][0],v:chain[j][1],du:(C*x1-B*y1)/det,dv:(A*y1-B*x1)/det,w});return;}
+        const [u,v]=chain[j],e=par.eval(u,v),D=G.curveTangent(p.c,t);let A=G.dot(e.Su,e.Su),B=G.dot(e.Su,e.Sv),C=G.dot(e.Sv,e.Sv);
+        // a toleranced edge is off the surface by r: the foot then moves at a rate that also
+        // depends on the curvature (the r·S_uu terms). Left out, the loft control's side faces
+        // came out 1e-4 mm³ short at a 0.83 µm gap (EXP-085).
+        const r=G.sub(G.curvePoint(p.c,t),e.S);
+        if(G.dot(r,r)>1e-24){const k=1e-6,a=par.eval(u+k,v),b=par.eval(u-k,v),c=par.eval(u,v+k),d=par.eval(u,v-k);
+          A-=G.dot(r,G.sub(a.Su,b.Su))/(2*k);C-=G.dot(r,G.sub(c.Sv,d.Sv))/(2*k);B-=G.dot(r,G.sub(c.Su,d.Su))/(2*k);}
+        const det=A*C-B*B;
+        if(det>1e-6*Math.abs(A*C)){const x1=G.dot(D,e.Su),y1=G.dot(D,e.Sv);pts.push({u,v,du:(C*x1-B*y1)/det,dv:(A*y1-B*x1)/det,w});return;}
         const a=par.param(G.curvePoint(p.c,t+h),chain[j]),b=par.param(G.curvePoint(p.c,t-h),chain[j]);
         pts.push({u:chain[j][0],v:chain[j][1],du:(a[0]-b[0])/(2*h),dv:(a[1]-b[1])/(2*h),w});});
       ends.push({start:chain[0],end:chain[n+1],at:pts.length});
@@ -197,18 +204,18 @@ function chooseBranch(angles,signedArea,orientation){
   for(const c of cands)if(signedArea(c)*orientation>0)return c;
   return cands[0];
 }
-function faceIntegral(face,M,segments){
+function faceIntegral(face,M,segments,O){
   const s=face.surface;
   if(s.type==='plane'){
-    const F=frame(s.n,s.x),off=G.dot(s.p,F.z);let a=0;
+    const F=frame(s.n,s.x),off=G.dot(G.sub(s.p,O),F.z);let a=0;
     for(const loop of face.loops)for(const co of loop.coedges){
       let p=edgePath(M.edges.get(co.edge),M.vertices);if(!co.sense)p={c:p.c,t0:p.t1,t1:p.t0};
-      for(const [t,w] of pathNodes(p,segments))a+=w*G.dot(G.curvePoint(p.c,t),F.x)*G.dot(G.curveTangent(p.c,t),F.y);
+      for(const [t,w] of pathNodes(p,segments))a+=w*G.dot(G.sub(G.curvePoint(p.c,t),O),F.x)*G.dot(G.curveTangent(p.c,t),F.y);
     }
     return off*a/3;
   }
   const par=parametrise(s);if(!par)return null;
-  const g=(u,v)=>{const e=par.eval(u,v);return G.dot(e.S,G.cross(e.Su,e.Sv));};
+  const g=(u,v)=>{const e=par.eval(u,v);return G.dot(G.sub(e.S,O),G.cross(e.Su,e.Sv));};
   const loops=face.surface.type==='bspline'?boundarySamplesBspline(face,M,par,segments):boundarySamples(face,M,par,segments);
   const wraps=par.periodicU&&loops.some(L=>Math.abs(L.reduce((sum,q)=>sum+q.du*q.w,0))>1);
   let total=0;
@@ -242,16 +249,56 @@ function curveIssue(e){
   return EXACT_CURVES.has(c.type)?null:c.type==='spcurve'?'SP-curve edge':c.type+' curve';
 }
 
-/* Faces with no boundary (a whole sphere or torus) are measured through src/brep/seams.js,
- * which splits them into bounded pieces the same way the STEP writer does. */
+/* A toleranced edge doesn't lie exactly on its faces. The loft control C16's top edges are
+ * exact circles, but the side patches end on cubics up to 0.83 µm inside them (Parasolid gives
+ * those edges a 2.07 µm tolerance; SolidWorks' STEP has the same gap). Each face's boundary
+ * integral runs along its own foot curve, the plane's along the circle itself, so the faces
+ * left a strip 0.83 µm wide uncovered, and the volume depended on where the origin was (0.0028
+ * mm³ per mm along the loft's axis, 2e-5 of the part). This adds the flux through the ribbon
+ * from each face's foot curve F to the edge curve C, which closes the shell:
+ *   ΔV = −(1/3) ∫ R·(C' × (C − F)) dt,  R = (C + F)/2, t along the coedge.
+ * R is linear across the ribbon and C' stands in for F', so the error is second order in the
+ * gap (about 1e-17 m³ here). Edges without a tolerance are on their faces to rounding and get
+ * nothing. */
+function ribbon(face,M,segments,O){
+  // the same foot the face's own boundary integral uses
+  const s=face.surface,par=s.type==='plane'?null:parametrise(s);
+  const foot=par?C=>{const [u,v]=par.param(C);return par.eval(u,v).S;}:C=>G.sub(C,G.mul(s.n,G.dot(G.sub(C,s.p),s.n)));
+  let dv=0;
+  for(const loop of face.loops)for(const co of loop.coedges){
+    const e=M.edges.get(co.edge);if(!e.tolerance)continue;
+    let p=edgePath(e,M.vertices);if(!co.sense)p={c:p.c,t0:p.t1,t1:p.t0};
+    for(const [t,w] of pathNodes(p,segments)){
+      const C=G.curvePoint(p.c,t),D=G.curveTangent(p.c,t),F=foot(C);
+      dv-=w*G.dot(G.sub(G.mul(G.add(C,F),0.5),O),G.cross(D,G.sub(C,F)))/3;
+    }
+  }
+  return dv;
+}
+
+/* Periodic faces are integrated after the seam split (src/brep/split.js), as the STEP writer
+ * and the triangulator see them. Unsplit, the H-form goes wrong on faces whose loops don't
+ * simply wrap round u: a sphere with vertex-less hole circles, a cylinder face with a slit edge
+ * used both ways. On four online parts it gave 0, negative, or 20% to 170% off what OpenCascade
+ * measures on our STEP; split, all four agree (EXP-085). Only a resolved model can be split; a
+ * STEP read is already cut at its seams, and a raw native build with inexact curves goes
+ * unsupported anyway. If the split itself fails, the volume is refused rather than measured
+ * unsplit. opts.split=false skips it. opts.origin moves the point the divergence integral is taken about: on a closed
+ * shell the volume doesn't depend on it, so a change shows faces that don't meet. */
 function volume(model,opts={}){
-  const segments=opts.segments||64;
-  const M=model.faces.some(f=>!f.loops.length)?require('./seams').addSeams(model):model;
+  const segments=opts.segments||64,O=opts.origin||[0,0,0];
   let v=0;const unsupported=new Set();
+  // the split needs a resolved model (every edge with its t0 -> t1)
+  const resolved=[...model.edges.values()].every(e=>e.t0!==undefined)&&model.faces.every(f=>f.loops.every(l=>l.coedges.every(co=>!curveIssue(model.edges.get(co.edge)))));
+  let M=model;
+  if(resolved&&opts.split!==false){
+    try{M=require('./split').split(model);}
+    catch(e){return {volume:undefined,faces:model.faces.length,unsupported:['seam split: '+e.message]};}
+  }else if(model.faces.some(f=>!f.loops.length))M=require('./seams').addSeams(model);
   for(const f of M.faces){
     const issues=f.loops.flatMap(l=>l.coedges.map(co=>curveIssue(M.edges.get(co.edge)))).filter(Boolean);
     if(issues.length){for(const i of issues)unsupported.add(i);continue;}
-    const x=faceIntegral(f,M,segments);if(x===null)unsupported.add(f.surface.type);else v+=x;
+    const x=faceIntegral(f,M,segments,O);if(x===null)unsupported.add(f.surface.type);else v+=x+ribbon(f,M,segments,O);
   }
   return {volume:unsupported.size?undefined:v,faces:M.faces.length,unsupported:[...unsupported]};
 }
