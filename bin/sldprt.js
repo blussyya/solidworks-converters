@@ -3,10 +3,10 @@
 /**
  * sldprt — command line for the SLDPRT readers. No dependencies; Node 18+.
  *
- *   sldprt info    <model.SLDPRT>                      what is in the file
+ *   sldprt info    <model.SLDPRT> [--allow-large-sections] what is in the file
  *   sldprt parse   <model.SLDPRT>                      display mesh as JSON (stdout)
- *   sldprt convert <model.SLDPRT> [--stl F] [--step F] [--ascii] [--mesh|--faceted] [--scale N]
- *   sldprt brep    <model.SLDPRT> [--json|--nodes] [--volume]   native Parasolid body
+ *   sldprt convert <model.SLDPRT> [--stl F] [--step F] [--ascii] [--mesh|--faceted] [--scale N] [--allow-large-sections]
+ *   sldprt brep    <model.SLDPRT> [--json|--nodes] [--volume] [--allow-large-sections] native Parasolid body
  *   sldprt render  <model.SLDPRT> [out.png]            six-view PNG contact sheet
  *   sldprt view    <model.SLDPRT> [--still] [--dark]   interactive terminal viewer
  *   sldprt serve   [--port N] [--host H] [--open]      browser viewer
@@ -15,18 +15,21 @@ const fs=require('fs'),path=require('path');
 
 const USAGE=`usage: sldprt <command> [options]
 
-  info    <model.SLDPRT>                    container, streams, versions, counts, B-rep census
+  info    <model.SLDPRT> [--allow-large-sections]
+                                            container, streams, versions, counts, B-rep census
   parse   <model.SLDPRT>                    display mesh as JSON on stdout
   convert <model.SLDPRT> [--stl out.stl] [--step out.step] [--ascii] [--mesh|--faceted] [--scale N]
+                                            --allow-large-sections bypasses the aggregate section limit
                                             STL and/or STEP; with neither flag both are written
                                             next to the input. STEP is exact, from the B-rep;
                                             --mesh writes it from the display mesh (planes exact,
                                             the rest triangles), --faceted all triangles. --scale
                                             applies to STL and mesh STEP (exact STEP is in mm)
-  brep    <model.SLDPRT> [--json | --nodes] [--volume]
+  brep    <model.SLDPRT> [--json | --nodes] [--volume] [--allow-large-sections]
                                             native Parasolid B-rep: node census and graph checks
                                             (--json: summary as JSON, --nodes: every typed node,
-                                            --volume: exact volume)
+                                            --volume: exact volume; --allow-large-sections bypasses
+                                            the aggregate section limit for trusted files
   render  <model.SLDPRT> [out.png]          six-view contact sheet of the display mesh
   view    <model.SLDPRT> [--still] [--dark] [--edges|--no-edges]
                                             interactive terminal viewer (truecolor terminal)
@@ -42,7 +45,7 @@ function need(a,cmd){if(!a[0]||a[0].startsWith('--')){console.error(`usage: sldp
 
 const commands={
  info(a){
-  const S=require('../src');const r=S.info(need(a,'info'));
+  const S=require('../src'),file=need(a,'info'),opts={allowLargeSections:has(a,'--allow-large-sections')};const r=S.info(file,opts);
   if(has(a,'--json')){console.log(JSON.stringify(r,null,2));return 0;}
   const L=[];
   L.push(`container   ${r.container}, ${r.bytes} bytes${r.containerError?' — '+r.containerError:''}`);
@@ -74,6 +77,7 @@ const commands={
  },
  convert(a){
   const file=need(a,'convert'),C=require('../src/convert'),S=require('../src');
+  const brepOpts={allowLargeSections:has(a,'--allow-large-sections')};
   const base=file.replace(/\.[^.\/\\]*$/,''),name=path.basename(base);
   const wantStl=has(a,'--stl')||!has(a,'--step'),wantStep=has(a,'--step')||!has(a,'--stl');
   const scale=Number(opt(a,'--scale',String(C.SCALE)));
@@ -81,20 +85,20 @@ const commands={
   const mode=has(a,'--faceted')?'faceted':has(a,'--mesh')?'mesh':'exact';
   const out={input:file};let m=null;
   const mesh=()=>{if(m)return m;
-   m=S.meshModel(file);out.mesh=m.source;out.faces=m.faceCount;out.triangles=m.triangleCount;return m;};
+   m=S.meshModel(file,brepOpts);out.mesh=m.source;out.faces=m.faceCount;out.triangles=m.triangleCount;return m;};
   if(wantStl){const f=opt(a,'--stl',base+'.converted.stl');
    const buf=has(a,'--ascii')?Buffer.from(C.toSTLAscii(mesh(),{scale,name}),'ascii'):C.toSTLBinary(mesh(),{scale});
    fs.writeFileSync(f,buf);out.stl={file:f,bytes:buf.length,format:has(a,'--ascii')?'ascii':'binary'};}
   if(wantStep){const f=opt(a,'--step',base+'.converted.step');let r;
    if(mode==='exact'){
-    try{r=S.toSTEP(file,{name});}
+    try{r=S.toSTEP(file,{name,...brepOpts});}
     catch(e){console.log(JSON.stringify(out,null,2));console.error('exact STEP failed: '+e.message+'\n--mesh or --faceted writes STEP from the display mesh instead');return 1;}
    }else{const x=C.toSTEP(mesh(),{scale,name,mode:mode==='faceted'?'faceted':'auto'});r={text:x.text,report:{mode,...x.report}};}
    fs.writeFileSync(f,r.text);out.step={file:f,bytes:r.text.length,...r.report};}
   console.log(JSON.stringify(out,null,2));return 0;
  },
  brep(a){
-  const S=require('../src');const r=S.readBrep(need(a,'brep'));
+  const S=require('../src'),file=need(a,'brep'),opts={allowLargeSections:has(a,'--allow-large-sections')};const r=S.readBrep(file,opts);
   if(has(a,'--nodes')){process.stdout.write(json({source:r.source,kind:r.kind,header:r.parsed.header,error:r.parsed.error,nodes:r.parsed.nodes.map(n=>({type:n.type,name:n.name,index:n.index,values:n.values}))})+'\n');return r.parsed.error?1:0;}
   const sum={source:r.source,kind:r.kind,schema:r.parsed.header&&r.parsed.header.schema,error:r.parsed.error,terminated:r.parsed.terminated,
    nodes:r.parsed.nodes.length,census:S.parasolid.census(r.parsed),graphChecks:r.graph.checks,graphErrors:r.graph.errors,unresolvedPointers:r.parsed.unresolved.length};
@@ -102,7 +106,7 @@ const commands={
   console.log(`source   ${sum.source} (${sum.kind})\nschema   ${sum.schema}\nnodes    ${sum.nodes}${sum.error?'  — stopped: '+sum.error:''}`);
   console.log('census   '+Object.entries(sum.census).map(([k,v])=>`${k}×${v}`).join('  '));
   console.log(`graph    ${sum.graphChecks} checks, ${sum.graphErrors.length} failed${sum.graphErrors.length?':\n  '+sum.graphErrors.slice(0,20).join('\n  '):''}`);
-  if(has(a,'--volume')){let v;try{v=S.volume(a[0]);}catch(e){v={error:e.message};}
+  if(has(a,'--volume')){let v;try{v=S.volume(a[0],opts);}catch(e){v={error:e.message};}
    console.log('volume   '+(v.error?'not computed: '+v.error:v.volume===undefined?'not computed: unsupported '+v.unsupported.join(', '):(v.volume*1e9).toFixed(6)+' mm³ (exact, from the B-rep)'));}
   return sum.error||sum.graphErrors.length?1:0;
  },

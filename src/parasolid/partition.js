@@ -73,13 +73,15 @@ function streams(raw,codec){
 }
 
 /* The chunks of the section at `pos` (size already read), joined. Throws on a bad frame. */
-function payload(b,pos,size,codec){
+function payload(b,pos,size,codec,options={}){
   const end=pos+4+size-8,parts=[];let p=pos+20,total=0;
+  const allowLarge=!!options.allowLargeSections;
   if(end>b.length||end<p)throw Error('size');
   while(p<end){
     if(p+8>end)throw Error('chunk header');
     const inflated=u32(b,p),compressed=u32(b,p+4);
     if(!compressed||p+8+compressed>end)throw Error('chunk length');
+    if(!allowLarge&&inflated>MAX-total)throw Error('section too large');
     let z;try{z=u8(codec.inflate(b.subarray(p+8,p+8+compressed)));}catch(_){throw Error('zlib');}
     if(z.length!==inflated)throw Error('inflated length');
     parts.push(z);total+=z.length;p+=8+compressed;
@@ -91,14 +93,14 @@ function payload(b,pos,size,codec){
 
 /* Walk a chain of sections starting at `pos`. Stops with `error` at the first frame that does not
  * validate; the sections read so far are returned. */
-function sections(b,pos,codec){
+function sections(b,pos,codec,options={}){
   b=u8(b);codec=codec||defaultCodec;
   const out=[];
   while(pos<b.length){
     if(pos+28>b.length)return {out,error:`leftover ${b.length-pos}`};
     const size=u32(b,pos);
     if(!isGuid(b,pos+4))return {out,error:'guid'};
-    let body;try{body=payload(b,pos,size,codec);}catch(e){return {out,error:e.message};}
+    let body;try{body=payload(b,pos,size,codec,options);}catch(e){return {out,error:e.message};}
     const head=latin1(body.subarray(0,64));
     const kind=(head.match(/TRANSMIT FILE(?: \((\w+)\))?/)||[])[1]||(/TRANSMIT FILE/.test(head)?'plain':'?');
     out.push({start:pos,kind,body,tail:hex(b.subarray(pos+4+size-8,pos+4+size))});
@@ -133,26 +135,26 @@ function activePartition(s,candidates){
 }
 
 /* The first payload of the saved configuration's partition, as the EXP-072 extractor reads it. */
-function extractPrimary(raw,all,codec){
+function extractPrimary(raw,all,codec,options={}){
   raw=u8(raw);codec=codec||defaultCodec;
   const s=all||streams(raw,codec),candidates=partitionNames(Object.keys(s));
   if(!candidates.length)throw Error('No Config-N-Partition stream');
   const {name,by}=activePartition(s,candidates),stream=s[name];
   if(hex(stream.subarray(4,20))!==GUID_HEX)throw Error(name+' does not start with the section GUID');
   const size=u32(stream,0);
-  return {name,stream,candidates,chosenBy:by,inner:payload(stream,0,size,codec),compressedBytes:size-32};
+  return {name,stream,candidates,chosenBy:by,inner:payload(stream,0,size,codec,options),compressedBytes:size-32};
 }
 
 /* Summary of every partition-bearing stream: section kinds, chain status. For `sldprt info`. */
-function survey(raw,all,codec){
+function survey(raw,all,codec,options={}){
   all=all||streams(raw,codec);const rows=[];
   for(const [k,b] of Object.entries(all)){
     const g=find(b,GUID,0);if(g<4)continue;
-    if(/Partition$/.test(k)){const w=sections(b,g-4,codec);rows.push({stream:k,bytes:b.length,prefix:g-4,sections:w.out.map(x=>({offset:x.start,kind:x.kind,bytes:x.body.length})),chain:w.error?'broken: '+w.error:'complete'});}
+    if(/Partition$/.test(k)){const w=sections(b,g-4,codec,options);rows.push({stream:k,bytes:b.length,prefix:g-4,sections:w.out.map(x=>({offset:x.start,kind:x.kind,bytes:x.body.length})),chain:w.error?'broken: '+w.error:'complete'});}
     else{
       const found=[];
       for(let h=g;h>=4;h=find(b,GUID,h+1)){
-        const w=sections(b.subarray(0,h-4+4+u32(b,h-4)),h-4,codec);
+        const w=sections(b.subarray(0,h-4+4+u32(b,h-4)),h-4,codec,options);
         if(w.error||w.out.length!==1)continue;
         found.push({offset:w.out[0].start,kind:w.out[0].kind,bytes:w.out[0].body.length});
       }
@@ -193,11 +195,11 @@ function inPart(q){
 }
 
 /* Every section in a stream that has other data between its sections (LocalBodies). */
-function embedded(b,codec){
+function embedded(b,codec,options){
   const out=[];
   for(let g=find(b,GUID,0);g>=4;g=find(b,GUID,g+1)){
     const end=g-4+4+u32(b,g-4);if(end>b.length)continue;
-    const w=sections(b.subarray(0,end),g-4,codec);if(!w.error&&w.out.length===1)out.push(w.out[0]);
+    const w=sections(b.subarray(0,end),g-4,codec,options);if(!w.error&&w.out.length===1)out.push(w.out[0]);
   }
   return out;
 }
@@ -231,19 +233,19 @@ function readBody(raw,options={},codec){
     if(!l)throw Error('No Parasolid body: no Config-N-Partition, Config-N-Body or transmit stream (a part with no solid has none)');
     return {source:l.name,kind:l.kind,parsed:parse(l.inner,true,options)};
   }
-  const primary=extractPrimary(raw,all,codec);
+  const primary=extractPrimary(raw,all,codec,options);
   let parsed=parse(primary.inner,true,options),source=primary.name,kind='partition';
   const local=all[primary.name.replace(/^(?:Contents\/)?(Config-\d+)-Partition$/,'$1-FeatureBodies/LocalBodies')];
   if(!parsed.error){
     const hidden=[...inPart(parsed)].filter(([,v])=>v===0).map(([b])=>b);
-    const bodies=local?embedded(local,codec).map(x=>parse(x.body,true,options)).filter(q=>!q.error&&q.nodes.some(n=>n.type===14)&&![...inPart(q).values()].includes(0)):[];
+    const bodies=local?embedded(local,codec,options).map(x=>parse(x.body,true,options)).filter(q=>!q.error&&q.nodes.some(n=>n.type===14)&&![...inPart(q).values()].includes(0)):[];
     if(bodies.length){parsed=merge([parsed,...bodies]);source=primary.name+' + '+bodies.length+' LocalBodies';kind='partition + local';}
     if(hidden.length)parsed={...parsed,hidden};
   }
   if(!parsed.error&&!parsed.nodes.some(n=>n.type===14)){
     for(const [k,b] of Object.entries(all)){
       const g=find(b,GUID,0);if(g<4||/Partition$/.test(k))continue;
-      for(const x of sections(b,g-4,codec).out){
+      for(const x of sections(b,g-4,codec,options).out){
         const q=parse(x.body,true,options);
         if(!q.error&&q.nodes.some(n=>n.type===14)){parsed=q;source=k;kind=x.kind;break;}
       }

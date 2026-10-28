@@ -15,8 +15,9 @@
  *   toSTEP(file, opts)   {text, report}: AP214 from the native B-rep, exact (docs/step.md);
  *                        {mode:'mesh'}: from the display mesh, planes analytic, the rest
  *                        faceted; {mode:'faceted'}: every face as triangles
- *   readBrep(file, opts) the native Parasolid body: typed nodes + graph checks
- *   volume(file)         exact enclosed volume of the native body, m³
+ *   readBrep(file, opts) the native Parasolid body: typed nodes + graph checks;
+ *                        opts.allowLargeSections bypasses the aggregate section limit
+ *   volume(file, opts)   exact enclosed volume of the native body, m³
  *                                                                    (docs/format/parasolid.md)
  */
 const fs=require('fs'),zlib=require('zlib');
@@ -43,7 +44,8 @@ function bytes(input){
 function parse(input){return display.parseSLDPRT(bytes(input),inflateRaw,inflateZlib);}
 
 /* What is in the file, cheaply: no geometry arrays in the result. */
-function info(input){
+function info(input,opts){
+  opts=opts||{};
   const b=bytes(input),legacy=modern.isOLE2(b),out={container:legacy?'OLE2 compound document (legacy)':'modern (SolidWorks 2015+)',bytes:b.length};
   try{
     if(legacy){const o=ole.read(b),st=o.entries.filter(e=>e.type===2);out.streams=st.map(e=>({name:e.name,bytes:e.size}));
@@ -56,8 +58,8 @@ function info(input){
   const d=display.parseSLDPRT(b,inflateRaw,inflateZlib);
   const tags={};for(const f of d.faces)if(f.metadata)tags[f.metadata.typeTag]=(tags[f.metadata.typeTag]||0)+1;
   out.display={format:d.format,faces:d.faces.length,triangles:d.stats?d.stats.triangles:0,surfaceTags:tags,rejected:(d.rejected||[]).length,overlays:(d.overlays||[]).length,warnings:(d.warnings||[]).length,errors:d.errors};
-  try{out.partitions=partition.survey(b).map(r=>({stream:r.stream,chain:r.chain,sections:r.sections.map(s=>s.kind)}));}catch(e){out.partitionError=e.message;}
-  try{const r=readBrep(b);out.brep={source:r.source,schema:r.parsed.header&&r.parsed.header.schema,nodes:r.parsed.nodes.length,census:graph.census(r.parsed),graphChecks:r.graph.checks,graphErrors:r.graph.errors.length,error:r.parsed.error};}
+  try{out.partitions=partition.survey(b,undefined,undefined,opts).map(r=>({stream:r.stream,chain:r.chain,sections:r.sections.map(s=>s.kind)}));}catch(e){out.partitionError=e.message;}
+  try{const r=readBrep(b,opts);out.brep={source:r.source,schema:r.parsed.header&&r.parsed.header.schema,nodes:r.parsed.nodes.length,census:graph.census(r.parsed),graphChecks:r.graph.checks,graphErrors:r.graph.errors.length,error:r.parsed.error};}
   catch(e){out.brepError=e.message;}
   return out;
 }
@@ -69,22 +71,22 @@ function model(input,opts){
   if(parsed.faces&&parsed.faces.length)return {...convert.loadModel(parsed),source:'display mesh'};
   const why=parsed.errors&&parsed.errors.length?parsed.errors.join('; '):'no faces';
   let t;
-  try{t=tessellate.tessellate(Split.split(Procedural.resolve(nativeModel.build(readBrep(input).parsed))),opts||{});}
+  try{t=tessellate.tessellate(Split.split(Procedural.resolve(nativeModel.build(readBrep(input,opts).parsed))),opts||{});}
   catch(e){throw Error('cannot convert: '+why+'; triangulating the B-rep failed: '+e.message);}
   return {...tessellate.toMeshModel(t),source:'B-rep tessellation ('+why+')'};
 }
 function toSTL(input,opts){opts=opts||{};const m=model(input,opts);return opts.ascii?convert.toSTLAscii(m,opts):convert.toSTLBinary(m,opts);}
 function toSTEP(input,opts){
   opts=opts||{};const mode=opts.mode||'exact';
-  if(mode==='exact'){const r=stepExport.toSTEP(readBrep(input).parsed,opts);return {text:r.text,report:{mode,...r.report}};}
+  if(mode==='exact'){const r=stepExport.toSTEP(readBrep(input,opts).parsed,opts);return {text:r.text,report:{mode,...r.report}};}
   if(mode!=='mesh'&&mode!=='auto'&&mode!=='faceted')throw Error('toSTEP: mode is exact, mesh or faceted, not '+mode);
-  const r=convert.toSTEP(model(input),{...opts,mode:mode==='faceted'?'faceted':'auto'});
+  const r=convert.toSTEP(model(input,opts),{...opts,mode:mode==='faceted'?'faceted':'auto'});
   return {text:r.text,report:{mode:mode==='auto'?'mesh':mode,...r.report}};
 }
 
 /* Exact enclosed volume (m³) of the native B-rep, from its surfaces and curves. Resolved first,
  * like the STEP writer, so intersections and blends are fitted before integrating. */
-function volume(input){return brepVolume.volume(Procedural.resolve(nativeModel.build(readBrep(input).parsed)));}
+function volume(input,opts){return brepVolume.volume(Procedural.resolve(nativeModel.build(readBrep(input,opts).parsed)));}
 
 /* Native B-rep: {source stream, section kind, parsed: xt.parse result, graph: topology checks}. */
 function readBrep(input,opts){
