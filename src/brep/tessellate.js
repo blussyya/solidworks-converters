@@ -121,6 +121,11 @@ function tessellate(M,opts={}){
     const C=f.cell;
     if(PERIODIC_U.has(s.type)){const r=C?(C.u0+C.u1)/2:circ('u');for(const q of all)q.u=wrapTo(q.u,r);}
     if(s.type==='torus'){const r=C?(C.v0+C.v1)/2:circ('v');for(const q of all)q.v=wrapTo(q.v,r);}
+    // a B-surface closed in u or v: put the boundary on one branch, as on a cylinder
+    if(s.type==='bspline')for(const [k,on,K,deg] of [['u',s.uPeriodic||s.uClosed,s.ku,s.du],['v',s.vPeriodic||s.vClosed,s.kv,s.dv]]){if(!on)continue;
+      const lo=K[deg],hi=K[K.length-deg-1],w=hi-lo,ang=x=>(x-lo)/w*TAU;
+      const r=Math.atan2(all.reduce((a,q)=>a+Math.sin(ang(q[k])),0),all.reduce((a,q)=>a+Math.cos(ang(q[k])),0));
+      for(const q of all)q[k]=lo+wrapTo(ang(q[k]),r)/TAU*w;}
     // A boundary on the edge of the parameter range comes back from the inverse a hair inside it
     // (u up to 2e-5 on a 1 mm wide B-spline ribbon, whose fitted edge curves sit nanometres off
     // the surface), so the straight side zigzags in (u,v). Snap it when the iso-line is within a
