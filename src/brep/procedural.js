@@ -66,7 +66,9 @@ function resolve(N,opts){
       // unrelated to the fitted surface's spine parameterisation -- when the plain fit can't
       // reach the tolerance, spcurveEdge re-anchors the curve geometrically instead.
       if(c.type==='spcurve')c={...c,surface:surfMemo.get(c.surface)||c.surface};
-      else c={...c,surfaces:c.surfaces.map(q=>surfMemo.get(q)||q)};
+      // a blend's contact curve (one surface a BLEND_BOUND) is built from the raw blend and its
+      // raw supports, which may be blends themselves; the fitted copies would not be found there
+      else if(!c.surfaces.some(q=>q.type==='blendBound'))c={...c,surfaces:c.surfaces.map(q=>surfMemo.get(q)||q)};
       const r=Fit.edgeCurve(e,c,p0,p1,{tolerance:tol,faceOf});
       out={curve:r.curve,t0:r.t0,t1:r.t1,fit:r.error};report.fittedCurves++;report.errors.curve=Math.max(report.errors.curve,r.error);
     }else throw Error('resolve: edge '+e.id+' curve '+c.type);

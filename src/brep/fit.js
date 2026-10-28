@@ -87,6 +87,18 @@ function fitPoints(fn,ss,tol,opts){
 /* Foot of p on surface s, seeded by the previous foot on the same surface (cache). */
 function footOn(s,p,cache){
   const near=cache&&cache.get(s);
+  // A constant-radius rolling-ball blend is a pipe round its spine, so its foot is exact: the
+  // nearest spine point c, then r along p - c. Parasolid uses one as the offset of a blend
+  // (a fillet run along an earlier fillet: the second's spine meets the first offset by the
+  // second's radius), and 5 parts in the online sample need it (EXP-085).
+  if(s.type==='blend'&&Math.abs(Math.abs(s.range[0])-Math.abs(s.range[1]))<1e-12){
+    const sp=spineOf(s,1e-10).curve,t=near?spineParam(sp,p,near.t):G.curveProject(sp,p).t;
+    const c=G.curvePoint(sp,t),v=sub(p,c),rho=norm(v),r=Math.abs(s.range[0]);
+    if(cache)cache.set(s,{t});
+    if(!rho)throw Error('blend: point on the spine');
+    const n=mul(v,1/rho);
+    return {q:add(c,mul(n,r)),n,d:rho-r};
+  }
   const r=G.surfaceInverse(s,p,near),e=G.surfaceEval(s,r.u,r.v);
   if(cache)cache.set(s,{u:r.u,v:r.v});
   const n=unit(cross(e.du,e.dv));
@@ -94,18 +106,32 @@ function footOn(s,p,cache){
 }
 /* Point on S1 ∩ S2 in the plane through g normal to T (Newton on the three equations). */
 function corrector(S1,S2,g,T,cache){
-  let X=g;
-  for(let it=0;it<40;it++){
+  let X=g,lm=false;
+  for(let it=0;it<(lm?400:40);it++){
     const a=footOn(S1,X,cache),b=footOn(S2,X,cache);
     const F=[a.d,b.d,dot(sub(X,g),T)];
     const M=[a.n,b.n,T],det=dot(M[0],cross(M[1],M[2]));
-    if(Math.abs(det)<1e-14)throw Error('intersection: surfaces tangent');
+    // Where the surfaces touch (a blend that runs out tangentially) the normals are parallel and
+    // Newton divides by ~0. The point is still where both distances vanish: find it by damped
+    // least squares in the plane normal to T, and check that it got there.
+    if(lm||Math.abs(det)<1e-8){lm=true;
+      const e1=unit(cross(T,Math.abs(T[0])<0.9?[1,0,0]:[0,1,0])),e2=cross(T,e1);
+      const j=[[dot(a.n,e1),dot(a.n,e2)],[dot(b.n,e1),dot(b.n,e2)]],mu=1e-12;
+      const A11=j[0][0]*j[0][0]+j[1][0]*j[1][0]+mu,A12=j[0][0]*j[0][1]+j[1][0]*j[1][1],A22=j[0][1]*j[0][1]+j[1][1]*j[1][1]+mu;
+      const g1=j[0][0]*F[0]+j[1][0]*F[1],g2=j[0][1]*F[0]+j[1][1]*F[1],dd=A11*A22-A12*A12;
+      const x1=(A22*g1-A12*g2)/dd,x2=(A11*g2-A12*g1)/dd;
+      const D=add(add(mul(e1,-x1),mul(e2,-x2)),mul(T,-F[2]));X=add(X,D);
+      if(norm(D)<1e-16+1e-15*norm(X))break;
+      continue;
+    }
     // Δ = -M^{-1} F, rows of M are the gradients
     const c0=cross(M[1],M[2]),c1=cross(M[2],M[0]),c2=cross(M[0],M[1]);
     const D=mul(add(add(mul(c0,F[0]),mul(c1,F[1])),mul(c2,F[2])),-1/det);
     X=add(X,D);
     if(norm(D)<1e-16+1e-15*norm(X))break;
   }
+  if(lm){const a=footOn(S1,X,cache),b=footOn(S2,X,cache);
+    if(Math.max(Math.abs(a.d),Math.abs(b.d))>1e-8)throw Error('intersection: surfaces tangent, no common point ('+Math.max(Math.abs(a.d),Math.abs(b.d)).toExponential(1)+' m)');}
   return X;
 }
 /* The surfaces touch at X: their normals are parallel and the curve's direction is undefined. */
@@ -119,8 +145,16 @@ function march(S1,S2,A,B,dir0,scale,ring){
   if(singular(S1,S2,A,cache)){X=A;T=unit(dir0);}
   else{X=corrector(S1,S2,A,unit(dir0),cache);T=tangentAt(S1,S2,X,cache);if(dot(T,dir0)<0)T=mul(T,-1);}
   const pts=[X];let h=scale/16,travelled=0;
+  // how far B itself is from the curve: a spine's limit point can sit a little off it
+  // (a blend's spine runs on past where the offsets meet): then the march ends on the curve point
+  // nearest B, not on B, or the fit is pulled off the curve (0.6 mm on 2f121983's spines). A vertex
+  // is on its curve to within the model's tolerance and stays as it is.
+  // (its own cache: the march's warm starts must stay near the march, not jump to B)
+  let offB=0,Bc=B;if(!ring){try{Bc=corrector(S1,S2,B,T,new Map());offB=dist(B,Bc);}catch(e){offB=0;}if(offB<=1e-7)Bc=B;}
   for(let k=0;k<100000;k++){
-    if(!ring&&dot(sub(B,X),T)<=h*1.2){pts.push(B);return pts;}
+    // B must be near as well as ahead: on 14f9214b the end is 17 mm away across a loop but only
+    // 2 mm ahead along the starting tangent, and a half-space test alone stopped at once
+    if(!ring&&dot(sub(B,X),T)<=h*1.2&&dist(B,X)<=h*1.5+offB){pts.push(Bc);return pts;}
     if(ring&&travelled>3*h&&dist(X,A)<=h*1.2){pts.push(pts[0]);return pts;}
     let Y,T2;
     for(;;){Y=corrector(S1,S2,add(X,mul(T,h)),T,cache);T2=tangentAt(S1,S2,Y,cache);if(dot(T2,T)<0)T2=mul(T2,-1);
@@ -129,6 +163,34 @@ function march(S1,S2,A,B,dir0,scale,ring){
     if(dot(T2,T)>Math.cos(1*Math.PI/180))h=Math.min(h*1.5,scale/16);
   }
   throw Error('intersection: march did not reach the end');
+}
+/* Exact points from A to B along the chart Parasolid stores between them. The chart lies on the
+ * branch the curve takes, so following it can't go the other way round a closed intersection or
+ * leave a touching point along the wrong branch, which one long march can (14f9214b, 2f121983).
+ * Each chord between chart points is sampled and each sample corrected onto the curve in the plane
+ * normal to the chord; the corrected points must come out in order along the chord and evenly
+ * spaced, or the chord is too coarse there and this throws rather than fit through a wrong point. */
+function chartMarch(S1,S2,A,B,chart){
+  try{return chartPoly(S1,S2,A,B,chart);}catch(e){if(/chart too coarse/.test(e.message))return null;throw e;}
+}
+function chartPoly(S1,S2,A,B,chart){
+  const near=q=>{let best=0,bd=Infinity;chart.forEach((x,i)=>{const d=dist(x,q);if(d<bd){bd=d;best=i;}});return best;};
+  const ia=near(A),ib=near(B);if(ia===ib)return null;
+  const step=ib>ia?1:-1,way=[A];
+  // the chart point nearest A is a waypoint when it lies past A towards the rest of the chart
+  // (a blend's spine starts at a touching point with the first chart point just inside it)
+  const inside=(k,from,dir)=>dist(chart[k],from)>1e-9&&dot(sub(chart[k],from),sub(chart[k+dir],chart[k]))>0;
+  if(inside(ia,A,step))way.push(chart[ia]);
+  for(let k=ia+step;k!==ib;k+=step)way.push(chart[k]);
+  if(dist(chart[ib],B)>1e-9&&dot(sub(B,chart[ib]),sub(chart[ib],chart[ib-step]))>0)way.push(chart[ib]);
+  way.push(B);
+  const cache=new Map(),poly=[A],n=16;
+  for(let i=0;i+1<way.length;i++){const P=way[i],Q=way[i+1],L=dist(P,Q);if(L<1e-12)continue;
+    const T=unit(sub(Q,P));let prev=P,prevS=0;
+    for(let k=1;k<=n;k++){const X=k===n?Q:corrector(S1,S2,add(P,mul(sub(Q,P),k/n)),T,cache),sX=dot(sub(X,P),T);
+      if(!(sX>prevS)||dist(X,prev)>3*L/n)throw Error('intersection: chart too coarse to follow ('+(dist(X,prev)*1e3).toFixed(3)+' mm step)');
+      poly.push(X);prev=X;prevS=sX;}}
+  return poly;
 }
 /* Exact point at fraction s of a polyline of exact points: Newton in the plane normal to the chord. */
 function polyFn(S1,S2,poly){
@@ -164,7 +226,9 @@ function intersectionEdge(e,c,p0,p1,tol){
   let scale=0;for(let i=1;i<chart.length;i++)scale+=dist(chart[i],chart[i-1]);
   if(!ring)scale=Math.max(Math.min(scale,4*dist(A,B)),dist(A,B));
   let poly;
-  if(!ring&&singular(S1,S2,A,new Map())&&!singular(S1,S2,B,new Map())){
+  const sa=!ring&&singular(S1,S2,A,new Map()),sb=!ring&&singular(S1,S2,B,new Map());
+  if(!ring&&(poly=chartMarch(S1,S2,A,B,chart))){/* along the chart */}
+  else if(sa&&!sb){
     // march away from the touching point, where the direction is well defined, and turn round
     const ib=near(B),cb=ib>0?sub(chart[ib],chart[ib-1]):sub(chart[ib+1],chart[ib]);
     poly=march(S1,S2,B,A,e.sameSense?mul(cb,-1):cb,scale||1e-3,false).reverse();
@@ -302,7 +366,7 @@ function spineOf(b,tol){
     if(!c.start||!c.end)throw Error('blend: intersection spine without limits');
     const A=c.start.p,B=c.end.p,cd=sub(c.chart[1],c.chart[0]);
     let scale=0;for(let i=1;i<c.chart.length;i++)scale+=dist(c.chart[i],c.chart[i-1]);
-    const poly=march(c.surfaces[0],c.surfaces[1],A,B,cd,scale,false);
+    const poly=chartMarch(c.surfaces[0],c.surfaces[1],A,B,c.chart)||march(c.surfaces[0],c.surfaces[1],A,B,cd,scale,false);
     const {ss,fn}=polyFn(c.surfaces[0],c.surfaces[1],poly);
     const r=fitPoints(fn,ss,tol/10,{fixed:poly});out={curve:r.curve,error:r.error};
   }else throw Error('blend: spine '+c.type);
@@ -311,9 +375,8 @@ function spineOf(b,tol){
 /* Contact of the ball centred at x with support i of blend b. */
 function contact(b,i,x,cache){
   const S=b.surfaces[i];
-  if(S.type==='blend'){
-    if(Math.abs(S.range[0])>1e-12||Math.abs(S.range[1])>1e-12)throw Error('blend: blend support with a radius');
-    let k=S.spine;if(k.type==='trimmed')k=k.basis;           // a zero-radius blend: the ball touches its spine
+  if(S.type==='blend'&&Math.abs(S.range[0])<1e-12&&Math.abs(S.range[1])<1e-12){
+    const k=spineOf(S,1e-10).curve;           // a zero-radius blend: the ball touches its spine
     return G.curvePoint(k,G.curveProject(k,x).t);
   }
   return footOn(S,x,cache).q;
