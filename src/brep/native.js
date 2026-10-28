@@ -100,10 +100,21 @@ function build(parsed){
     out.node=v.node_id;out.sense=sgn(v.sense);surfaces.set(i,out);return out;
   }
 
+  // node_ids are unique within a body, not within a partition: d0d61cde's solid and its four
+  // reference sheets each have an edge 7 (EXP-085). A node_id used once stays the id, so it still
+  // matches the display mesh; repeats get fresh ids above the highest, visible bodies first.
+  const hidden=new Set(parsed.hidden||[]),shellBody=s=>s&&node(s).values.body;
+  const bodyOf=n=>n.type===14?shellBody(n.values.shell)||shellBody(n.values.front_shell):n.values.owner;
+  const idOf=new Map();
+  {let next=1;for(const n of parsed.nodes)if(n.values&&n.values.node_id>=next)next=n.values.node_id+1;
+    for(const t of [14,16,18]){const seen=new Set();
+      const ns=parsed.nodes.filter(n=>n.type===t).sort((a,b)=>hidden.has(bodyOf(a))-hidden.has(bodyOf(b))||a.index-b.index);
+      for(const n of ns){const id=seen.has(n.values.node_id)?next++:n.values.node_id;seen.add(n.values.node_id);idOf.set(n.index,id);}}}
   const vertices=new Map(),edges=new Map(),faces=[];
-  const vertex=i=>{if(!i)return null;const n=node(i);if(!vertices.has(n.values.node_id))vertices.set(n.values.node_id,{id:n.values.node_id,p:node(n.values.point).values.pvec,tolerance:n.values.tolerance});return n.values.node_id;};
-  const faceId=i=>node(i).values.node_id;
+  const vertex=i=>{if(!i)return null;const n=node(i),id=idOf.get(i);if(!vertices.has(id))vertices.set(id,{id,p:node(n.values.point).values.pvec,tolerance:n.values.tolerance});return id;};
+  const faceId=i=>idOf.get(i);
   for(const e of parsed.nodes.filter(n=>n.type===16)){
+    if(hidden.has(e.values.owner))continue;
     const f=node(e.values.fin);if(f.values.sense!=='+')throw Error('B-rep: edge '+e.values.node_id+' positive fin has sense '+f.values.sense);
     const o=node(f.values.other);
     const start=vertex(o.values.vertex),end=vertex(f.values.vertex);
@@ -118,22 +129,21 @@ function build(parsed){
     if(cn){c=curve(e.values.curve);same=sgn(cn.values.sense)*(c.basisSense||1)>0;}
     else if(pcurves.length){c=pcurves[0].curve;same=pcurves[0].sameSense;}   // tolerant edge: its geometry lives on the fins
     else throw Error('B-rep: edge '+e.values.node_id+' has no curve');
-    edges.set(e.values.node_id,{id:e.values.node_id,v:start===null&&end===null?null:[start,end],curve:c,sameSense:same,tolerance:e.values.tolerance,pcurves,tolerant:!cn});
+    edges.set(idOf.get(e.index),{id:idOf.get(e.index),v:start===null&&end===null?null:[start,end],curve:c,sameSense:same,tolerance:e.values.tolerance,pcurves,tolerant:!cn});
   }
   // bodies SolidWorks marks as not part of the finished part (src/parasolid/partition.js)
-  const hidden=new Set(parsed.hidden||[]),shellBody=s=>s&&node(s).values.body;
   for(const f of parsed.nodes.filter(n=>n.type===14)){
     if(hidden.has(shellBody(f.values.shell)||shellBody(f.values.front_shell)))continue;
     const sn=node(f.values.surface),loops=[];
     for(let l=f.values.loop;l;l=node(l).values.next){
       const first=node(l).values.fin,co=[];let x=first,guard=0,lone=null;
-      do{const fin=node(x);if(fin.values.edge)co.push({edge:node(fin.values.edge).values.node_id,sense:fin.values.sense==='+'});else lone=vertex(fin.values.vertex);
+      do{const fin=node(x);if(fin.values.edge)co.push({edge:idOf.get(fin.values.edge),sense:fin.values.sense==='+'});else lone=vertex(fin.values.vertex);
         x=fin.values.forward;if(++guard>1e6)throw Error('B-rep: open fin ring');}while(x!==first);
       loops.push(co.length?{coedges:co}:{coedges:co,vertex:lone});
     }
-    faces.push({id:f.values.node_id,surface:surface(f.values.surface),sameSense:sgn(sn.values.sense)*sgn(f.values.sense)>0,loops,shell:f.values.shell,frontShell:f.values.front_shell});
+    faces.push({id:idOf.get(f.index),surface:surface(f.values.surface),sameSense:sgn(sn.values.sense)*sgn(f.values.sense)>0,loops,shell:f.values.shell,frontShell:f.values.front_shell});
   }
-  for(const v of parsed.nodes.filter(n=>n.type===18))vertex(v.index);
+  for(const v of parsed.nodes.filter(n=>n.type===18))if(!hidden.has(v.values.owner))vertex(v.index);
   // a hidden body's edges go with its faces
   if(hidden.size){const used=new Set(faces.flatMap(f=>f.loops.flatMap(l=>l.coedges.map(c=>c.edge))));for(const id of [...edges.keys()])if(!used.has(id))edges.delete(id);}
 
