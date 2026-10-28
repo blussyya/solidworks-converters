@@ -43,7 +43,7 @@
       opaquePrefixRange:[start,start+132],auxiliaryArrays:[a8,positions,normals].map(a=>({...a,raw:r.b.slice(a.offset+16,a.end)})),auxiliaryFlag:flag,scalarFlag,scalarArrays,reserved};
   }
   function extractDisplayLists(input,legacy=false){
-    const r=reader(input),faces=[],rejected=[],warnings=[];let totalVertices=0;
+    const r=reader(input),faces=[],rejected=[],warnings=[],overlays=[];let totalVertices=0;
     const sig=new Uint8Array([4,0,0,0,8,0,0,0,2,0,0,0]);
     for(const off of container.findAll(r.b,sig)){
       let pre,pos;
@@ -53,6 +53,9 @@
         // Parasolid-9-era legacy files (plate4) have no Block1/2/3: the face's bounding record follows
         // the normals directly, starting with u32 0, 1, 1. There are then no edge annotations.
         const bare=legacy&&normals.end+12<=r.b.length&&r.u(normals.end)===0&&r.u(normals.end+4)===1&&r.u(normals.end+8)===1;
+        // Cosmetic thread: a cylinder band at the thread's minor diameter with u32 1 where Block1
+        // would start. Drawn over a face, not a face itself, so it stays out of the mesh (EXP-084).
+        if(!legacy&&normals.end+4<=r.b.length&&r.u(normals.end)===1){overlays.push({offset:off,kind:'cosmetic thread',stripLengths:r.words(pre),vertexCount:pos.header[3]});continue;}
         const empty=o=>({offset:o,header:[0,0,0,0],end:o});
         const b1=bare?empty(normals.end):r.arr(normals.end,4,8),b2=bare?empty(normals.end):r.arr(b1.end,4,8),b3=bare?empty(normals.end):r.arr(b2.end,1,8);
         const stripLengths=r.words(pre),tokens=r.words(b1),lengths=r.words(b2),vc=pos.header[3];
@@ -113,7 +116,7 @@
           warnings.push({offset:meta.offset,message:'Unvalidated metadata auxiliary values retained raw'});
       }catch(e){f.metadataError=e.message;warnings.push({offset:f.geometryEnd,message:e.message});}
     }
-    return {faces,rejected,warnings,stats:{faces:faces.length,triangles:faces.reduce((s,f)=>s+f.triangleIndices.length/3,0),metadataFaces:faces.filter(f=>f.metadata).length}};
+    return {faces,rejected,warnings,overlays,stats:{faces:faces.length,triangles:faces.reduce((s,f)=>s+f.triangleIndices.length/3,0),metadataFaces:faces.filter(f=>f.metadata).length}};
   }
   function boundaryCycles(f){
     // These are display-mesh boundary cycles, with arbitrary traversal direction.
@@ -142,7 +145,10 @@
       const dl=extracted.bytes;if(dl.length>ole.MAX_BYTES)throw Error('DisplayLists exceeds 128 MiB limit');
       const result=extractDisplayLists(dl,legacy);
       if(legacy)result.warnings.push({message:'Legacy mesh geometry decoded; downstream surface/edge metadata remains uninterpreted'});
-      return {format,displayListsLength:dl.length,stream:extracted.stream||'DisplayLists',errors:result.faces.length?[]:['No supported face records found'],partial:result.rejected.length>0,...result};
+      // A part saved without display data still has a DisplayLists stream, holding only lights and
+      // view settings; the tessellation classes (uoTempBodyTessData_c ...) are missing (EXP-084).
+      const tess=legacy||container.findAll(dl,Uint8Array.from('uoTempBodyTessData_c',ch=>ch.charCodeAt(0))).length>0;
+      return {format,displayListsLength:dl.length,stream:extracted.stream||'DisplayLists',errors:result.faces.length?[]:[tess?'No supported face records found':'DisplayLists holds no tessellation (saved without display data)'],partial:result.rejected.length>0,...result};
     }catch(e){return {format,faces:[],errors:[e.message],warnings:[],rejected:[]};}
   }
   return {parseSLDPRT,extractDisplayLists};

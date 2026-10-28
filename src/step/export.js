@@ -6,6 +6,8 @@
  * parsed is src/parasolid/xt.js output (readBrep(...).parsed). opts as src/step/write.js, plus
  * tolerance (m, default 1e-8) for fitted geometry. The file's uncertainty is 1e-5 mm, or the
  * largest fit error or tolerant-edge gap when that is bigger, rounded up to 1, 2 or 5 x 10^n.
+ * A fit error over opts.maxError (m, default 1e-6) throws instead: that is our approximation
+ * failing, not the model's own tolerance, and the file would not be the part (EXP-085).
  *
  * Isomorphic: loads in Node and as a plain browser script (global SLDPRTStepExport).
  */
@@ -19,6 +21,8 @@ function toSTEP(parsed,opts){return fromNative(Native.build(parsed),opts);}
 function fromNative(N,opts){
   opts=opts||{};
   const R=Procedural.resolve(N,opts),M=Split.split(R);
+  const limit=opts.maxError===undefined?1e-6:opts.maxError;
+  if(R.report.maxError>limit)throw Error('exact STEP: fitted geometry is '+(R.report.maxError*1000).toPrecision(3)+' mm off the exact (limit '+limit*1000+' mm)');
   const fitMM=R.report.maxError*1000,gapMM=R.report.maxEdgeGap*1000;
   const uncertainty=Math.max(opts.uncertainty||1e-5,niceUp(fitMM),niceUp(gapMM));
   const text=Write.write(M,{...opts,uncertainty});

@@ -9,20 +9,24 @@
  *   parse(file)          saved display mesh, per face: strips, triangles, normals, edge IDs,
  *                        surface record, bounding record            (docs/format/displaylists.md)
  *   info(file)           container, streams, versions, counts, partition sections
- *   toSTL(file, opts)    Buffer, binary STL (or {ascii:true} -> string)
+ *   toSTL(file, opts)    Buffer, binary STL (or {ascii:true} -> string), from the saved mesh;
+ *                        a part saved without one is triangulated from the B-rep instead
+ *                        ({tolerance} in metres, default 1e-5)
  *   toSTEP(file, opts)   {text, report}: AP214 from the native B-rep, exact (docs/step.md);
  *                        {mode:'mesh'}: from the display mesh, planes analytic, the rest
  *                        faceted; {mode:'faceted'}: every face as triangles
- *   readBrep(file, opts) the native Parasolid body: typed nodes + graph checks
- *   volume(file)         exact enclosed volume of the native body, m³
+ *   readBrep(file, opts) the native Parasolid body: typed nodes + graph checks;
+ *                        opts.allowLargeSections bypasses the aggregate section limit
+ *   volume(file, opts)   exact enclosed volume of the native body, m³
  *                                                                    (docs/format/parasolid.md)
  */
 const fs=require('fs'),zlib=require('zlib');
-const modern=require('./container/modern'),ole=require('./container/ole'),blast=require('./container/blast');
+const modern=require('./container/modern'),ole=require('./container/ole'),blast=require('./container/blast'),history=require('./container/history');
 const display=require('./display'),convert=require('./convert');
 const xt=require('./parasolid/xt'),partition=require('./parasolid/partition'),graph=require('./parasolid/topology');
 const stepExport=require('./step/export');
 const nativeModel=require('./brep/native'),brepVolume=require('./brep/volume'),stepWriter=require('./step/write'),stepReader=require('./step/read');
+const Procedural=require('./brep/procedural'),Split=require('./brep/split'),tessellate=require('./brep/tessellate');
 
 const MAX=128*1024*1024;
 const inflateRaw=b=>zlib.inflateRawSync(b,{maxOutputLength:MAX});
@@ -40,37 +44,49 @@ function bytes(input){
 function parse(input){return display.parseSLDPRT(bytes(input),inflateRaw,inflateZlib);}
 
 /* What is in the file, cheaply: no geometry arrays in the result. */
-function info(input){
+function info(input,opts){
+  opts=opts||{};
   const b=bytes(input),legacy=modern.isOLE2(b),out={container:legacy?'OLE2 compound document (legacy)':'modern (SolidWorks 2015+)',bytes:b.length};
   try{
-    if(legacy){const o=ole.read(b);out.streams=o.entries.filter(e=>e.type===2).map(e=>({name:e.name,bytes:e.size}));}
-    else{const s=modern.decompressOpenSX(b,inflateRaw,inflateZlib);out.streams=Object.keys(s).map(k=>({name:k,bytes:s[k].length}));out.displayListsVersion=modern.displayListsVersion(s);}
+    if(legacy){const o=ole.read(b),st=o.entries.filter(e=>e.type===2);out.streams=st.map(e=>({name:e.name,bytes:e.size}));
+      out.saved=history.saved(o.entries.map(e=>e.name),n=>o.stream(st.find(e=>e.name===n)));}
+    else{const s=modern.decompressOpenSX(b,inflateRaw,inflateZlib);out.streams=Object.keys(s).map(k=>({name:k,bytes:s[k].length}));out.displayListsVersion=modern.displayListsVersion(s);
+      // an STL, STEP or anything else has no compressed streams at all
+      if(!out.streams.length){out.container='not a SolidWorks part';throw Error('no OLE2 header and no compressed streams');}
+      out.saved=history.saved(Object.keys(s),n=>s[n]);}
   }catch(e){out.containerError=e.message;}
   const d=display.parseSLDPRT(b,inflateRaw,inflateZlib);
   const tags={};for(const f of d.faces)if(f.metadata)tags[f.metadata.typeTag]=(tags[f.metadata.typeTag]||0)+1;
-  out.display={format:d.format,faces:d.faces.length,triangles:d.stats?d.stats.triangles:0,surfaceTags:tags,rejected:(d.rejected||[]).length,warnings:(d.warnings||[]).length,errors:d.errors};
-  try{out.partitions=partition.survey(b).map(r=>({stream:r.stream,chain:r.chain,sections:r.sections.map(s=>s.kind)}));}catch(e){out.partitionError=e.message;}
-  try{const r=readBrep(b);out.brep={source:r.source,schema:r.parsed.header&&r.parsed.header.schema,nodes:r.parsed.nodes.length,census:graph.census(r.parsed),graphChecks:r.graph.checks,graphErrors:r.graph.errors.length,error:r.parsed.error};}
+  out.display={format:d.format,faces:d.faces.length,triangles:d.stats?d.stats.triangles:0,surfaceTags:tags,rejected:(d.rejected||[]).length,overlays:(d.overlays||[]).length,warnings:(d.warnings||[]).length,errors:d.errors};
+  try{out.partitions=partition.survey(b,undefined,undefined,opts).map(r=>({stream:r.stream,chain:r.chain,sections:r.sections.map(s=>s.kind)}));}catch(e){out.partitionError=e.message;}
+  try{const r=readBrep(b,opts);out.brep={source:r.source,schema:r.parsed.header&&r.parsed.header.schema,nodes:r.parsed.nodes.length,census:graph.census(r.parsed),graphChecks:r.graph.checks,graphErrors:r.graph.errors.length,error:r.parsed.error};}
   catch(e){out.brepError=e.message;}
   return out;
 }
 
-function model(input){
+/* The saved display mesh, or, when the part was saved without one, the B-rep triangulated
+ * (EXP-084). `source` says which. */
+function model(input,opts){
   const parsed=parse(input);
-  if(!parsed.faces||!parsed.faces.length)throw Error('cannot convert: '+(parsed.errors&&parsed.errors.length?parsed.errors.join('; '):'no faces'));
-  return convert.loadModel(parsed);
+  if(parsed.faces&&parsed.faces.length)return {...convert.loadModel(parsed),source:'display mesh'};
+  const why=parsed.errors&&parsed.errors.length?parsed.errors.join('; '):'no faces';
+  let t;
+  try{t=tessellate.tessellate(Split.split(Procedural.resolve(nativeModel.build(readBrep(input,opts).parsed))),opts||{});}
+  catch(e){throw Error('cannot convert: '+why+'; triangulating the B-rep failed: '+e.message);}
+  return {...tessellate.toMeshModel(t),source:'B-rep tessellation ('+why+')'};
 }
-function toSTL(input,opts){opts=opts||{};const m=model(input);return opts.ascii?convert.toSTLAscii(m,opts):convert.toSTLBinary(m,opts);}
+function toSTL(input,opts){opts=opts||{};const m=model(input,opts);return opts.ascii?convert.toSTLAscii(m,opts):convert.toSTLBinary(m,opts);}
 function toSTEP(input,opts){
   opts=opts||{};const mode=opts.mode||'exact';
-  if(mode==='exact'){const r=stepExport.toSTEP(readBrep(input).parsed,opts);return {text:r.text,report:{mode,...r.report}};}
+  if(mode==='exact'){const r=stepExport.toSTEP(readBrep(input,opts).parsed,opts);return {text:r.text,report:{mode,...r.report}};}
   if(mode!=='mesh'&&mode!=='auto'&&mode!=='faceted')throw Error('toSTEP: mode is exact, mesh or faceted, not '+mode);
-  const r=convert.toSTEP(model(input),{...opts,mode:mode==='faceted'?'faceted':'auto'});
+  const r=convert.toSTEP(model(input,opts),{...opts,mode:mode==='faceted'?'faceted':'auto'});
   return {text:r.text,report:{mode:mode==='auto'?'mesh':mode,...r.report}};
 }
 
-/* Exact enclosed volume (m³) of the native B-rep, from its surfaces and curves. */
-function volume(input){return brepVolume.volume(nativeModel.build(readBrep(input).parsed));}
+/* Exact enclosed volume (m³) of the native B-rep, from its surfaces and curves. Resolved first,
+ * like the STEP writer, so intersections and blends are fitted before integrating. */
+function volume(input,opts){return brepVolume.volume(Procedural.resolve(nativeModel.build(readBrep(input,opts).parsed)));}
 
 /* Native B-rep: {source stream, section kind, parsed: xt.parse result, graph: topology checks}. */
 function readBrep(input,opts){
@@ -78,6 +94,6 @@ function readBrep(input,opts){
   return {...r,graph:graph.topology(r.parsed)};
 }
 
-module.exports={parse,info,toSTL,toSTEP,readBrep,volume,inflateRaw,inflateZlib,
+module.exports={parse,info,toSTL,meshModel:model,toSTEP,readBrep,volume,inflateRaw,inflateZlib,
   brep:{model:nativeModel.build,volume:brepVolume.volume},step:{read:stepReader.readBrep,write:stepWriter.write},
   display,convert,container:{modern,ole,blast},parasolid:{xt,partition,topology:graph.topology,census:graph.census}};

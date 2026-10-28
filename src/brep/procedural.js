@@ -46,6 +46,9 @@ function resolve(N,opts){
     if(s.type==='blend'){
       const r=Fit.blendSurface(s,f,N,{tolerance:tol});
       out=r.surface;report.fittedSurfaces++;report.errors.surface=Math.max(report.errors.surface,r.error);
+    }else if(s.type==='offset'&&s.basis&&s.basis.type==='blend'){
+      // an offset of a blend (2013 head_back has 144 of them): the blend underneath is fitted too
+      out={...s,basis:surface(s.basis,f)};
     }else if(s.type==='blendBound')throw Error('resolve: face '+f.id+' lies on a blend boundary surface');
     surfMemo.set(s,out);return out;
   }
@@ -58,6 +61,14 @@ function resolve(N,opts){
     if(c.type==='line'||c.type==='circle'||c.type==='ellipse'||(c.type==='bspline'&&c.dim!==2)){
       out={curve:c,...range(c,e.sameSense,p0,p1,e)};report.exactEdges++;
     }else if(c.type==='spcurve'||c.type==='intersection'){
+      // fit against the resolved surfaces, not the raw ones: an SP_CURVE pcurve on a blend
+      // surface must see the fitted B-spline. Its raw (u,v) is Parasolid's own blend parameter,
+      // unrelated to the fitted surface's spine parameterisation -- when the plain fit can't
+      // reach the tolerance, spcurveEdge re-anchors the curve geometrically instead.
+      if(c.type==='spcurve')c={...c,surface:surfMemo.get(c.surface)||c.surface};
+      // a blend's contact curve (one surface a BLEND_BOUND) is built from the raw blend and its
+      // raw supports, which may be blends themselves; the fitted copies would not be found there
+      else if(!c.surfaces.some(q=>q.type==='blendBound'))c={...c,surfaces:c.surfaces.map(q=>surfMemo.get(q)||q)};
       const r=Fit.edgeCurve(e,c,p0,p1,{tolerance:tol,faceOf});
       out={curve:r.curve,t0:r.t0,t1:r.t1,fit:r.error};report.fittedCurves++;report.errors.curve=Math.max(report.errors.curve,r.error);
     }else throw Error('resolve: edge '+e.id+' curve '+c.type);

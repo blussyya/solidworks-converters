@@ -226,22 +226,33 @@ function surfaceDistance(s,p){
 }
 /* Closest point on a B-spline surface. `guess` ({u,v}, e.g. the previous point along a curve)
  * skips the coarse grid search; if Newton from it doesn't land on the surface the grid is used. */
+/* A B-surface periodic or closed in u (or v) wraps there instead of stopping: clamping put the
+ * foot of a point across the seam on the wrong side (5f8e9db3, EXP-085). */
+function keepIn(lo,hi,x,wrap){if(!wrap)return Math.min(hi,Math.max(lo,x));const w=hi-lo;return lo+(((x-lo)%w)+w)%w;}
+const wrapsU=s=>!!(s.uPeriodic||s.uClosed),wrapsV=s=>!!(s.vPeriodic||s.vClosed);
 function bsplineProject(s,p,guess){
   if(guess){const r=bsplineProject1(s,p,guess.u,guess.v);if(r.d<1e-7)return r;}
   const nu=s.ctrl.length,nv=s.ctrl[0].length;
   const [u0,u1]=[s.ku[s.du],s.ku[nu]],[v0,v1]=[s.kv[s.dv],s.kv[nv]];
-  const G=Math.max(24,nu*4),H=Math.max(24,nv*4);let best={u:u0,v:v0,d:Infinity};
-  for(let i=0;i<=G;i++)for(let j=0;j<=H;j++){const u=u0+(u1-u0)*i/G,v=v0+(v1-v0)*j/H,d=dist(p,bsplineSurface(s,u,v).p);if(d<best.d)best={u,v,d};}
-  return bsplineProject1(s,p,best.u,best.v);
+  // Newton from the 8 best grid points, not just the best: on a long thin surface (5f8e9db3's
+  // spring, coils a fraction of a millimetre apart) the nearest grid point can be on the next coil
+  const G=Math.max(24,nu*4),H=Math.max(24,nv*4),top=[];
+  for(let i=0;i<=G;i++)for(let j=0;j<=H;j++){const u=u0+(u1-u0)*i/G,v=v0+(v1-v0)*j/H,d=dist(p,bsplineSurface(s,u,v).p);
+    if(top.length<8||d<top[top.length-1].d){top.push({u,v,d});top.sort((a,b)=>a.d-b.d);if(top.length>8)top.pop();}}
+  let best=null;for(const t of top){const r=bsplineProject1(s,p,t.u,t.v);if(!best||r.d<best.d)best=r;if(best.d<1e-12)break;}
+  return best;
 }
 function bsplineProject1(s,p,u,v){
   const nu=s.ctrl.length,nv=s.ctrl[0].length;
   const [u0,u1]=[s.ku[s.du],s.ku[nu]],[v0,v1]=[s.kv[s.dv],s.kv[nv]];
   for(let it=0;it<60;it++){ // Gauss–Newton on the tangent plane
-    const e=bsplineSurface(s,u,v),r=sub(p,e.p),a=dot(e.du,e.du),b=dot(e.du,e.dv),c=dot(e.dv,e.dv),det=a*c-b*b;if(!det)break;
+    // lightly damped so a direction the surface doesn't depend on stays put: at a degenerate
+    // edge (a blend's tip, where the two contacts meet) every (u,v) on it is as good a fit and
+    // an undamped step slides along it
+    const e=bsplineSurface(s,u,v),r=sub(p,e.p),lam=1e-12*(dot(e.du,e.du)+dot(e.dv,e.dv)),a=dot(e.du,e.du)+lam,b=dot(e.du,e.dv),c=dot(e.dv,e.dv)+lam,det=a*c-b*b;if(!det)break;
     const x=dot(r,e.du),y=dot(r,e.dv),du=(c*x-b*y)/det,dv=(a*y-b*x)/det;
-    const nu2=Math.min(u1,Math.max(u0,u+du)),nv2=Math.min(v1,Math.max(v0,v+dv));
-    if(Math.abs(nu2-u)<1e-16&&Math.abs(nv2-v)<1e-16){u=nu2;v=nv2;break;}u=nu2;v=nv2;}
+    const nu2=keepIn(u0,u1,u+du,wrapsU(s)),nv2=keepIn(v0,v1,v+dv,wrapsV(s));
+    if(Math.abs(du)<1e-16&&Math.abs(dv)<1e-16){u=nu2;v=nv2;break;}u=nu2;v=nv2;}
   const e=bsplineSurface(s,u,v),n=unit(cross(e.du,e.dv)),r=sub(p,e.p),d=norm(r);
   return {u,v,d,signed:d===0?0:Math.sign(dot(r,n))*d,n};
 }
@@ -250,11 +261,11 @@ function bsplineNewton(s,p,u,v){
   const nu=s.ctrl.length,nv=s.ctrl[0].length,u0=s.ku[s.du],u1=s.ku[nu],v0=s.kv[s.dv],v1=s.kv[nv];
   for(let it=0;it<30;it++){
     const e=bsplineSurface(s,u,v),r=sub(p,e.p),a=dot(e.du,e.du),b=dot(e.du,e.dv),c=dot(e.dv,e.dv),det=a*c-b*b;if(!det)return null;
-    const x=dot(r,e.du),y=dot(r,e.dv),nu2=Math.min(u1,Math.max(u0,u+(c*x-b*y)/det)),nv2=Math.min(v1,Math.max(v0,v+(a*y-b*x)/det));
-    if(Math.abs(nu2-u)<1e-15*(1+Math.abs(u))&&Math.abs(nv2-v)<1e-15*(1+Math.abs(v)))return {u:nu2,v:nv2};
+    const x=dot(r,e.du),y=dot(r,e.dv),su=(c*x-b*y)/det,sv=(a*y-b*x)/det,nu2=keepIn(u0,u1,u+su,wrapsU(s)),nv2=keepIn(v0,v1,v+sv,wrapsV(s));
+    if((Math.abs(nu2-u)<1e-15*(1+Math.abs(u))||Math.abs(su)<1e-15*(1+Math.abs(u)))&&(Math.abs(nv2-v)<1e-15*(1+Math.abs(v))||Math.abs(sv)<1e-15*(1+Math.abs(v))))return {u:nu2,v:nv2};
     u=nu2;v=nv2;
   }
-  return {u,v};
+  return null;   // did not settle: the caller searches afresh
 }
 /* Closest point on the surface and the natural normal there. */
 function surfaceFoot(s,p,near){

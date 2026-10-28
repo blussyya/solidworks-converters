@@ -26,6 +26,10 @@ function walk(dir){
   return out;
 }
 
+/* The controlled models under a "test files new" era folder: <model>/model.SLDPRT. Parts the
+ * community sends in sit loose beside them and have no BUILD_LOG entry. */
+const controlled=dir=>walk(dir).filter(f=>path.basename(f)==='model.SLDPRT');
+
 /* Per-model face counts SolidWorks reported, from a corpus BUILD_LOG.md. Keys like "sw2011/c00_cube_10mm". */
 function buildLogFaceCounts(root){
   const log=fs.readFileSync(path.join(root,'test files new/SW2022/BUILD_LOG.md'),'utf8'),counts={};
@@ -46,4 +50,4 @@ function buildLog(root){
   return out;
 }
 
-module.exports={findCorpus,walk,buildLogFaceCounts,buildLog};
+module.exports={findCorpus,walk,controlled,buildLogFaceCounts,buildLog};

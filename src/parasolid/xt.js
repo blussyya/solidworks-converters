@@ -43,7 +43,12 @@ const bases={
   54:spec(geometry+' centre:v axis:v major_radius:f minor_radius:f x_axis:v'),
   56:spec(geometry+' blend_type:c surface:p:2 spine:p range:f:2 thumb_weight:f:2 boundary:p:2 start:p end:p'),
   59:spec(geometry+' boundary:n blend:p'),
+  // SPUN_SURF and OFFSET_SURF layouts are not in 13006 either; taken from the XT Format
+  // Reference (q-solid.com/Parasolid_Docs, sections 5.2.2.8/5.2.2.11), then verified by
+  // traversal on the keycap parts, which do carry an OFFSET_SURF (type 60).
+  60:spec(geometry+' check:c true_offset:l surface:p offset:f scale:f'),
   67:spec(geometry+' section:p sweep:v scale:f'),
+  68:spec(geometry+' profile:p base:v axis:v start:v end:v start_param:f end_param:f x_axis:v scale:f'),
   // Candidate base-effective LIST fields: the edit script consumes nine, not
   // the twelve shown in the later reference struct. Verified through traversal.
   70:spec('node_id:d owner:p next:p previous:p list_type:d list_length:d block_length:d size_of_entry:d list_block:p'),
@@ -53,6 +58,15 @@ const bases={
   81:spec('node_id:d definition:p owner:p next:p previous:p next_of_type:p previous_of_type:p fields:p:*'),
   82:spec('values:d:*'),83:spec('values:f:*'),84:spec('values:c:*'),
   98:spec('values:w:*'),
+  // Not in 13006's edit scripts as new types: files that use them say "as in the base", so the
+  // layouts come from the XT Format Reference (2006), checked by traversal on EXP-084's parts.
+  85:spec('values:v:*'),86:spec('values:v:*'),87:spec('values:v:*'),88:spec('values:d:*'),89:spec('values:v:*'),
+  100:spec('node_id:d owner:p next:p previous:p rotation_matrix:f:9 translation_vector:v scale:f flag:d perspective_vector:v'),
+  // The reference's table has 163 = curve helix, 184 = surface helix. In SolidWorks files 163 is the
+  // SURFACE_DATA analytic_form ('H') with the surface layout, and CURVE_DATA's analytic_form is a 184
+  // with the curve layout (threads, EXP-084). So the numbers are taken from the files.
+  163:spec('axis_pt:v axis_dir:v hand:c turns:i pitch:f gap:f tol:f'),
+  184:spec('axis_pt:v axis_dir:v point:v hand:c turns:i pitch:f tol:f'),
   101:spec('assembly:p attribute:p body:p transform:p surface:p curve:p point:p alive:l attrib_def:p highest_id:d current_id:d'),
   124:spec(geometry+' nurbs:p data:p'),134:spec(geometry+' nurbs:p data:p'),
   125:spec('original_uint:i original_vint:i extended_uint:i extended_vint:i self_int:u original_u_start:c original_u_end:c original_v_start:c original_v_end:c extended_u_start:c extended_u_end:c extended_v_start:c extended_v_end:c analytic_form_type:c swept_form_type:c spun_form_type:c blend_form_type:c analytic_form:p swept_form:p spun_form:p blend_form:p'),
@@ -77,12 +91,13 @@ const v9={
   102:spec('string:c:*'),
 };
 const names={12:'BODY',13:'SHELL',14:'FACE',15:'LOOP',16:'EDGE',17:'FIN',18:'VERTEX',19:'REGION',29:'POINT',30:'LINE',50:'PLANE',70:'LIST',74:'POINTER_LIS_BLOCK',79:'ATT_DEF_ID',80:'ATTRIB_DEF',81:'ATTRIBUTE',82:'INT_VALUES',83:'REAL_VALUES',84:'CHAR_VALUES'};
-Object.assign(names,{31:'CIRCLE',32:'ELLIPSE',51:'CYLINDER',52:'CONE',53:'SPHERE',54:'TORUS',124:'B_SURFACE',134:'B_CURVE',137:'SP_CURVE'});
+Object.assign(names,{31:'CIRCLE',32:'ELLIPSE',51:'CYLINDER',52:'CONE',53:'SPHERE',54:'TORUS',60:'OFFSET_SURF',67:'SWEPT_SURF',68:'SPUN_SURF',124:'B_SURFACE',134:'B_CURVE',137:'SP_CURVE'});
 Object.assign(names,{45:'BSPLINE_VERTICES',125:'SURFACE_DATA',126:'NURBS_SURF',127:'KNOT_MULT',128:'KNOT_SET',133:'TRIMMED_CURVE',135:'CURVE_DATA',136:'NURBS_CURVE'});
 names[141]='GEOMETRIC_OWNER';
 names[101]='WORLD';names[102]='KEY';
 Object.assign(names,{38:'INTERSECTION',40:'CHART',41:'LIMIT',67:'SWEPT_SURF'});
 Object.assign(names,{56:'BLENDED_EDGE',59:'BLEND_BOUND',98:'UNICODE_VALUES'});
+Object.assign(names,{85:'POINT_VALUES',86:'VECTOR_VALUES',87:'AXIS_VALUES',88:'TAG_VALUES',89:'DIRECTION_VALUES',100:'TRANSFORM',163:'HELIX_SU_FORM',184:'HELIX_CU_FORM'});
 class Reader {
   constructor(raw,binary){
     if(!(raw instanceof Uint8Array))raw=new Uint8Array(raw);
