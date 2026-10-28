@@ -2,7 +2,7 @@
 /* Display mesh over the whole research corpus (73 files). Skips without the corpus. */
 const test=require('node:test'),assert=require('assert/strict'),fs=require('fs'),path=require('path');
 const display=require('../src/display'),modern=require('../src/container/modern'),browser=require('../src/inflate');
-const {walk,buildLogFaceCounts,buildLog}=require('./helpers/corpus');
+const {walk,controlled,buildLogFaceCounts,buildLog}=require('./helpers/corpus');
 const {iR,iZ,sha256,canonical,CORPUS,needsCorpus}=require('./helpers/common');
 const golden=require('./fixtures/display-golden.json');
 
@@ -20,7 +20,7 @@ test('every corpus file parses exactly as the golden record',needsCorpus,t=>{
 
 test('SW2011 legacy: 25 files, 145 faces, face counts as SolidWorks reports',needsCorpus,t=>{
   const counts=buildLogFaceCounts(CORPUS);let n=0,faces=0;
-  for(const f of walk(path.join(CORPUS,'test files new/SW2011'))){
+  for(const f of controlled(path.join(CORPUS,'test files new/SW2011'))){
     const r=display.parseSLDPRT(fs.readFileSync(f),iR,iZ),name=path.basename(path.dirname(f));
     assert.deepEqual(r.errors,[],name);assert.deepEqual(r.rejected,[],name);
     assert.equal(r.faces.length,counts[('sw2011/'+name).toLowerCase()],name);
@@ -32,7 +32,7 @@ test('SW2011 legacy: 25 files, 145 faces, face counts as SolidWorks reports',nee
 
 test('modern: 45 files, 1,414 faces, every one with a surface record',needsCorpus,t=>{
   const counts=buildLogFaceCounts(CORPUS);let n=0,faces=0,meta=0;
-  for(const base of ['test files new/SW2022','test files original'])for(const f of walk(path.join(CORPUS,base))){
+  for(const base of ['test files new/SW2022','test files original'])for(const f of (base.startsWith('test files new')?controlled:walk)(path.join(CORPUS,base))){
     const b=fs.readFileSync(f);if(modern.isOLE2(b))continue;
     const r=display.parseSLDPRT(b,iR,iZ),name=path.basename(path.dirname(f));
     assert.deepEqual(r.errors,[],f);assert.deepEqual(r.rejected,[],f);
@@ -82,7 +82,7 @@ test('upgraded part: empty edge table keeps the surface tag; a wrong table is re
 
 test('container: CRC-32 verified on every named stream; inflated size and name length as recorded',needsCorpus,t=>{
   let streams=0,named=0;
-  for(const base of ['test files new/SW2022','test files original'])for(const f of walk(path.join(CORPUS,base))){
+  for(const base of ['test files new/SW2022','test files original'])for(const f of (base.startsWith('test files new')?controlled:walk)(path.join(CORPUS,base))){
     const b=fs.readFileSync(f);if(modern.isOLE2(b))continue;
     assert.equal(b[7],4,f+': name rotation key');
     const s=modern.decompressOpenSX(b,iR,iZ);   // throws on any CRC mismatch
@@ -107,7 +107,7 @@ test('container: CRC-32 verified on every named stream; inflated size and name l
 test('surface tags agree with the surface types SolidWorks reports (2022, natively authored)',needsCorpus,t=>{
   const TAG={4001:'plane',4002:'cylinder',4003:'cone',4004:'sphere',4005:'torus',4006:'B-surface/parametric'};
   const log=buildLog(CORPUS);let faces=0,models=0;
-  for(const f of walk(path.join(CORPUS,'test files new/SW2022'))){
+  for(const f of controlled(path.join(CORPUS,'test files new/SW2022'))){
     const name=path.basename(path.dirname(f));if(name==='C23_cube_sw2011_to_2022')continue; // upgraded, see C23 test
     const r=display.parseSLDPRT(fs.readFileSync(f),iR,iZ);
     const got=r.faces.map(x=>TAG[x.metadata.typeTag]).sort(),want=[...log[('sw2022/'+name).toLowerCase()].types].sort();

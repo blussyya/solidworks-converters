@@ -5,7 +5,7 @@ const test=require('node:test'),assert=require('assert/strict'),fs=require('fs')
 const {parse,Reader}=require('../src/parasolid/xt'),{topology}=require('../src/parasolid/topology'),P=require('../src/parasolid/partition');
 const display=require('../src/display'),modern=require('../src/container/modern');
 const {cubeGeometry,compare,coverage}=require('./helpers/xt-checks');
-const {walk,buildLogFaceCounts}=require('./helpers/corpus');
+const {walk,controlled,buildLogFaceCounts}=require('./helpers/corpus');
 const {iR,iZ,CORPUS,needsCorpus}=require('./helpers/common');
 
 const models=era=>fs.readdirSync(path.join(CORPUS,'test files new',era)).filter(m=>fs.existsSync(path.join(CORPUS,'test files new',era,m,'model.SLDPRT'))).sort();
@@ -109,7 +109,7 @@ test('display layer joins the native body: IDs, surface types, and the mesh lies
       case 54:{const d=sub(p,v.centre),h=dot(d,v.axis),rad=sub(d,scale(v.axis,h)),rho=norm(rad);return norm(sub(d,scale(rad,v.major_radius/rho)))-v.minor_radius;}
     }return null;}
   let faces=0,ids=0,edges=0,empty=0,typed=0,evaluated=0,onSurface=0;
-  for(const f of [...walk(path.join(CORPUS,'test files new/SW2022')),...walk(path.join(CORPUS,'test files original'))]){
+  for(const f of [...controlled(path.join(CORPUS,'test files new/SW2022')),...walk(path.join(CORPUS,'test files original'))]){
     const raw=fs.readFileSync(f);if(modern.isOLE2(raw))continue;
     const r=P.readBody(raw).parsed,m=new Map(r.nodes.map(n=>[n.index,n])),byId=new Map(r.nodes.filter(n=>n.type===14).map(n=>[n.values.node_id,n]));
     for(const df of display.parseSLDPRT(raw,iR,iZ).faces){
