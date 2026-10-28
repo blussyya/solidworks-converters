@@ -14,19 +14,21 @@ const vertexSet=f=>[...S.brep.model(S.readBrep(f).parsed).vertices.values()].map
 test('re-exports keep the body they were saved from',needs,()=>{
   const pairs=[
     ['test files original/plate4.sldprt','test files new/re-exports/plate4-1997to2026kevinrahhal.sldprt',1997],
+    // saved in 2026, then saved as 2025 24 s later: History ends 2026 -> 2025
+    ['test files original/plate4.sldprt','test files new/re-exports/plate4 1997to2025kevin.SLDPRT',1997,2025],
     ['test files new/SW2011/C00_cube_10mm/model.SLDPRT','test files new/re-exports/C00_cube_10mm-2011-to-2026/model.SLDPRT',2010],
     ['test files new/SW2011/C01_cube_20mm/model.SLDPRT','test files new/re-exports/C01_cube_20mm-2011-to-2026/model.SLDPRT',2010],
     ['test files new/SW2022/holefillets1-2022-neetn33t.SLDPRT','test files new/re-exports/holefillets1-2022to2026reexport-Furthen64-kevinR.SLDPRT',2022]];
-  for(const [a,b,year] of pairs){
+  for(const [a,b,year,last=2026] of pairs){
     const A=path.join(CORPUS,a),B=path.join(CORPUS,b);
     if(!fs.existsSync(B))continue;
     assert.deepEqual(vertexSet(B),vertexSet(A),b);
     assert.equal(S.volume(B).volume,S.volume(A).volume,b);
-    // the 2026 save is the last entry of History, and the first is where the part started
+    // the last save is the last entry of History, and the first is where the part started
     const h=S.info(B).saved.history;
-    assert.equal(h[h.length-1].release,'SolidWorks 2026',b);assert.equal(h[0].date.year,year,b);
-    // a re-save writes a new DisplayLists stream
-    assert.equal(S.info(B).displayListsVersion,19000,b);
+    assert.equal(h[h.length-1].release,'SolidWorks '+last,b);assert.equal(h[0].date.year,year,b);
+    // these re-saves all wrote a new DisplayLists stream, in the version they were saved as
+    assert.equal(S.info(B).displayListsVersion,h[h.length-1].version,b);
   }
 });
 
