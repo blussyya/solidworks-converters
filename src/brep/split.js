@@ -127,7 +127,7 @@ function split(R,opts){
       throw err;
     }
     if(parts.length>1){stats.split++;stats.pieces+=parts.length;}
-    parts.forEach((loops,i)=>faces.push({id:parts.length>1?newId():f.id,source:f.id,surface:f.surface,sameSense:f.sameSense,loops}));
+    parts.forEach(({loops,cell})=>faces.push({id:parts.length>1?newId():f.id,source:f.id,surface:f.surface,sameSense:f.sameSense,loops,cell}));
   }
   // shells refer to native faces; map them to their pieces
   const bySource=new Map();for(const f of faces){if(!bySource.has(f.source))bySource.set(f.source,[]);bySource.get(f.source).push(f.id);}
@@ -290,8 +290,11 @@ function split(R,opts){
       best.holes.push(h.co);
     }
     for(const l of vloops)if(l.vertex&&!corners.includes(l.vertex))throw Error('split: face '+f.id+' has a vertex loop off the poles');
-    const res=out.map(o=>[{coedges:o.co},...o.holes.map(co=>({coedges:co}))]);
-    return f.sameSense?res:res.map(ls=>ls.map(l=>rev(l)).map(l=>({coedges:l.coedges})));
+    // each piece keeps its cell: a face whose boundary is two opposite seams (a sphere halved
+    // along u = 0 and u = π) can't tell from its boundary alone which half it is
+    const res=out.map(o=>{const ls=[{coedges:o.co},...o.holes.map(co=>({coedges:co}))];
+      const C=cells[o.ci];return {loops:f.sameSense?ls:ls.map(l=>rev(l)).map(l=>({coedges:l.coedges})),cell:{u0:C.u0,u1:C.u1,v0:C.v0,v1:C.v1}};});
+    return res;
   }
   function seamCurve(s,alongV,fix){
     const y=G.cross(s.a,s.x),dir=u=>G.add(G.mul(s.x,Math.cos(u)),G.mul(y,Math.sin(u)));

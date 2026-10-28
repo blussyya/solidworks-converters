@@ -117,8 +117,10 @@ function tessellate(M,opts={}){
     // (u,v), warm-started along each loop, then onto one branch
     const loopsUV=loops3.map(l=>{let near=null;return l.map(q=>{const r=G.surfaceInverse(s,q.p,near);near=r;return {u:r.u,v:r.v,p:q.p,i:q.i};});});
     const all=loopsUV.flat(),circ=k=>Math.atan2(all.reduce((a,q)=>a+Math.sin(q[k]),0),all.reduce((a,q)=>a+Math.cos(q[k]),0));
-    if(PERIODIC_U.has(s.type)){const r=circ('u');for(const q of all)q.u=wrapTo(q.u,r);}
-    if(s.type==='torus'){const r=circ('v');for(const q of all)q.v=wrapTo(q.v,r);}
+    // the split says which cell the face is in; without it, the boundary's circular mean
+    const C=f.cell;
+    if(PERIODIC_U.has(s.type)){const r=C?(C.u0+C.u1)/2:circ('u');for(const q of all)q.u=wrapTo(q.u,r);}
+    if(s.type==='torus'){const r=C?(C.v0+C.v1)/2:circ('v');for(const q of all)q.v=wrapTo(q.v,r);}
     // A boundary on the edge of the parameter range comes back from the inverse a hair inside it
     // (u up to 2e-5 on a 1 mm wide B-spline ribbon, whose fitted edge curves sit nanometres off
     // the surface), so the straight side zigzags in (u,v). Snap it when the iso-line is within a
@@ -172,6 +174,14 @@ function refine(pts,tris,boundary,ev,tol,limit,su,sv){
   const mid3=(a,b)=>G.mul(G.add(pts[a].p,pts[b].p),0.5);
   const dev=(a,b)=>G.dist(ev((pts[a].u+pts[b].u)/2,(pts[a].v+pts[b].v)/2).p,mid3(a,b));
   const uv=j=>({x:pts[j].u*su,y:pts[j].v*sv});
+  // An interior edge between two boundary points can run along a straight stretch of the boundary
+  // (a cone's seam line has only its two end points). Its midpoint would then sit on the boundary,
+  // where the neighbouring face has no point, and the mesh would open there: such a split is refused.
+  const nb=pts.length,bseg=[...boundary].map(kk=>kk.split(',').map(Number));
+  const onBoundary=(a,b,u,v)=>{if(a>=nb||b>=nb)return false;const q={x:u*su,y:v*sv};
+    return bseg.some(([i,j])=>{const A=uv(i),B=uv(j),L=Math.hypot(B.x-A.x,B.y-A.y);if(!L)return false;
+      const t=((q.x-A.x)*(B.x-A.x)+(q.y-A.y)*(B.y-A.y))/(L*L);if(t<=0||t>=1)return false;
+      return Math.abs((B.x-A.x)*(q.y-A.y)-(B.y-A.y)*(q.x-A.x))/L<=1e-12*L;});};
   // Of the two diagonals of a convex quad, keep the one nearer the surface: on a cylinder that is
   // the straight line along the axis, which then needs no splitting.
   // Only edges next to a change are looked at again. A flip whose new diagonal already exists
@@ -184,7 +194,10 @@ function refine(pts,tris,boundary,ev,tol,limit,su,sv){
         const i=x.findIndex((z,j)=>y.includes(z)&&y.includes(x[(j+1)%3]));if(i<0)continue;
         const a=x[i],b=x[(i+1)%3],c=x[(i+2)%3],d=y.find(z=>z!==a&&z!==b);
         if(d===undefined||c===d||edges.get(k(c,d))?.size)continue;
-        if(orient(uv(a),uv(d),uv(c))<=0||orient(uv(d),uv(b),uv(c))<=0)continue;
+        // strictly convex, with a margin: a corner a rounding error off the new diagonal (the
+        // midpoint of a straight ruling) would leave a triangle with no area
+        const A=uv(a),B=uv(b),Cc=uv(c),Dd=uv(d),L2=(Cc.x-Dd.x)**2+(Cc.y-Dd.y)**2;
+        if(orient(A,Dd,Cc)<=1e-9*L2||orient(Dd,B,Cc)<=1e-9*L2)continue;
         if(dev(c,d)>=dev(a,b)*0.999)continue;
         link(t1,false);link(t2,false);T[t1]=[a,d,c];T[t2]=[d,b,c];link(t1,true);link(t2,true);changed.add(t1).add(t2);
         for(const e of [k(a,d),k(d,b),k(b,c),k(c,a)])again.add(e);}
@@ -202,6 +215,7 @@ function refine(pts,tris,boundary,ev,tol,limit,su,sv){
       let worst=null,wd=tol;
       for(let j=0;j<3;j++){const a=x[j],b=x[(j+1)%3];if(boundary.has(k(a,b)))continue;
         const d=G.dist(ev((pts[a].u+pts[b].u)/2,(pts[a].v+pts[b].v)/2).p,mid3(a,b));if(d>wd){wd=d;worst=[a,b];}}
+      if(worst&&onBoundary(worst[0],worst[1],(pts[worst[0]].u+pts[worst[1]].u)/2,(pts[worst[0]].v+pts[worst[1]].v)/2))worst=null;
       if(worst){
         const [a,b]=worst,m=point((pts[a].u+pts[b].u)/2,(pts[a].v+pts[b].v)/2);
         // keep the winding: the edge runs a->b or b->a inside each triangle
