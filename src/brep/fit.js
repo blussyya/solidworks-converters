@@ -343,7 +343,9 @@ function reanchor(S,c,p0,p1,N,tol){
       return bvv;};
     const tA=anchors(p0),tB=anchors(p1);
     const startU=us[0],mid=(umin+umax)/2;
-    const fwd=startU<mid?tA<=tB:tB<=tA;
+    // the fit runs from the lower anchor to the higher, so the anchors give the direction; the
+    // 2D curve's start only decides a tie (both ends found at the same parameter)
+    const fwd=tA!==tB?tA<tB:startU<mid;
     const b0=Math.min(tA,tB),b1=Math.max(tA,tB);
     const ends=fwd?[p0,p1]:[p1,p0];
     const r=fitPoints(s=>G.surfaceEval(S,b0+(b1-b0)*s,vc).p,
