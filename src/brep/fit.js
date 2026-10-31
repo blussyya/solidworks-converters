@@ -65,22 +65,25 @@ function fitPoints(fn,ss,tol,opts){
   opts=opts||{};
   let s=ss.slice(),pts=s.map((x,i)=>opts.fixed&&opts.fixed[i]?opts.fixed[i]:fn(x));
   if(opts.ends){pts[0]=opts.ends[0];pts[pts.length-1]=opts.ends[1];}
-  let curve,error=Infinity;
+  // fn may give null where it has no point of this curve (polyFn near a T limit): that sample is
+  // counted in offBranch, not fitted, and not pinned
+  let curve,error=Infinity,offBranch=0;
   for(let round=0;round<16;round++){
-    const t=chordParams(pts);
+    const t=chordParams(pts);offBranch=0;
     curve={type:'bspline',...interp(pts,t,3),weights:null,closed:false};
     const bad=[];error=0;
     for(let i=0;i<s.length-1;i++){
       let e=0;
-      for(const f of [0.5,0.25,0.75]){const q=fn(s[i]+(s[i+1]-s[i])*f),u=nearestParam(curve,q,t[i]+(t[i+1]-t[i])*f);e=Math.max(e,dist(q,G.bsplineCurve(curve,u).p));}
+      for(const f of [0.5,0.25,0.75]){const q=fn(s[i]+(s[i+1]-s[i])*f);if(!q){offBranch++;continue;}
+        const u=nearestParam(curve,q,t[i]+(t[i+1]-t[i])*f);e=Math.max(e,dist(q,G.bsplineCurve(curve,u).p));}
       error=Math.max(error,e);if(e>tol)bad.push(i);
     }
     if(!bad.length||s.length>20000)break;
     const ns=[],np=[];
-    for(let i=0;i<s.length;i++){ns.push(s[i]);np.push(pts[i]);if(bad.includes(i)){const m=(s[i]+s[i+1])/2;ns.push(m);np.push(fn(m));}}
+    for(let i=0;i<s.length;i++){ns.push(s[i]);np.push(pts[i]);if(bad.includes(i)){const m=(s[i]+s[i+1])/2,q=fn(m);if(q){ns.push(m);np.push(q);}}}
     s=ns;pts=np;
   }
-  return {curve,error,samples:s.length};
+  return {curve,error,samples:s.length,offBranch};
 }
 
 /* ---------------- exact points ---------------- */
@@ -201,11 +204,20 @@ function chartPoly(S1,S2,A,B,chart){
 function polyFn(S1,S2,poly){
   const L=[0];for(let i=1;i<poly.length;i++)L.push(L[i-1]+dist(poly[i],poly[i-1]));const tot=L[L.length-1];
   const cache=new Map();
+  // the ends where the surfaces (nearly) touch: a T limit, normals within 1e-3 rad
+  const touch=[0,poly.length-1].filter(i=>{try{const a=footOn(S1,poly[i],new Map()),b=footOn(S2,poly[i],new Map());return norm(cross(a.n,b.n))<1e-3;}catch(e){return false;}}).map(i=>poly[i]);
   return {ss:L.map(x=>x/tot),fn:s=>{
     const x=s*tot;let i=1;while(i<L.length-1&&L[i]<x)i++;
     const a=poly[i-1],b=poly[i],f=(x-L[i-1])/((L[i]-L[i-1])||1);
     if(f<=0)return a;if(f>=1)return b;
-    return corrector(S1,S2,add(a,mul(sub(b,a),f)),unit(sub(b,a)),cache);}};
+    // Next to an end where the surfaces touch (a T limit) a point of the curve is about as far from
+    // that end as the guess is. Within ~0.1 µm of it the corrector can land on the other branch that
+    // crosses there (head_back blend 9931's spine: 1.5e-7 m to the side, 60 pm from the end), and a
+    // fit pinned to such points loops out ~1 µm. No point is given then. (Only at a touching end: on
+    // 5f8e9db3's tight spring coils a chord is enough shorter than its arc to fail the test.)
+    const g=add(a,mul(sub(b,a),f)),X=corrector(S1,S2,g,unit(sub(b,a)),cache);
+    for(const P of [a,b])if(touch.includes(P)&&dist(X,P)>2*dist(g,P)+1e-12)return null;
+    return X;}};
 }
 
 /* ---------------- edges ---------------- */
