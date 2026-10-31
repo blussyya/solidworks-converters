@@ -153,10 +153,12 @@ function surfaceEval(s,u,v){
       return {p:add(e.p,mul(s.d,v)),du:e.d,dv:s.d};}
     case 'spun':{const q=sub(curvePoint(s.curve,v),s.c),dq=curveTangent(s.curve,v),p=add(s.c,rotate(q,s.a,u));
       return {p,du:cross(s.a,sub(p,s.c)),dv:rotate(dq,s.a,u)};}
-    case 'offset':{const e=surfaceEval(s.basis,u,v),n=unit(cross(e.du,e.dv)),h=1e-6;
-      const pu=k=>{const f=surfaceEval(s.basis,u+k,v);return add(f.p,mul(unit(cross(f.du,f.dv)),s.d));};
-      const pv=k=>{const f=surfaceEval(s.basis,u,v+k);return add(f.p,mul(unit(cross(f.du,f.dv)),s.d));};
-      return {p:add(e.p,mul(n,s.d)),du:mul(sub(pu(h),pu(-h)),1/(2*h)),dv:mul(sub(pv(h),pv(-h)),1/(2*h))};}
+    // the offset runs along the basis's own normal, which its sense reverses: every offset in the
+    // online sample whose curve charts say which side it's on agrees (791 of them, EXP-086)
+    case 'offset':{const e=surfaceEval(s.basis,u,v),n=unit(cross(e.du,e.dv)),h=1e-6,d=s.basis.sense===-1?-s.d:s.d;
+      const pu=k=>{const f=surfaceEval(s.basis,u+k,v);return add(f.p,mul(unit(cross(f.du,f.dv)),d));};
+      const pv=k=>{const f=surfaceEval(s.basis,u,v+k);return add(f.p,mul(unit(cross(f.du,f.dv)),d));};
+      return {p:add(e.p,mul(n,d)),du:mul(sub(pu(h),pu(-h)),1/(2*h)),dv:mul(sub(pv(h),pv(-h)),1/(2*h))};}
   }
   throw Error('surfaceEval: '+s.type);
 }

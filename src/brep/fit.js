@@ -435,7 +435,11 @@ function blendSurface(b,face,N,opts){
       for(let k=1;k<8;k++)pts.push(G.curvePoint(c,a+dz*k/8));}}
   const ref=G.curveProject(sp,pts[0]).t;
   // a boundary point is at distance r from its section's centre
-  const ts=pts.map(q=>spineParam(sp,q,ref));
+  // (the local projection from `ref` can stick at the spine's end when ref is a T limit; the global
+  // one is then the right section: head_back's far vertices are 1 mm from t = 0.15, not from t = 1)
+  const off=(q,t)=>Math.abs(dist(q,G.curvePoint(sp,t))-r);
+  const ts=pts.map(q=>{const t=spineParam(sp,q,ref);if(G.periodic(sp))return t;
+    const g=G.curveProject(sp,q).t;return off(q,g)<off(q,t)-1e-9?g:t;});
   let t0=Math.min(...ts),t1=Math.max(...ts);
   const span=t1-t0;
   const lim=[b.start,b.end].filter(Boolean).filter(x=>x.type==='T').map(x=>spineParam(sp,x.p,ref));
