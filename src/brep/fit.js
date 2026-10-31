@@ -274,6 +274,13 @@ function intersectionEdge(e,c,p0,p1,tol){
     poly=march(S1,S2,B,A,e.sameSense?mul(cb,-1):cb,scale||1e-3,false).reverse();
   }else poly=march(S1,S2,A,B,dir,scale||1e-3,ring);
   if(ring){/* the start is a point of the curve: make it the edge's vertex */}
+  // a tolerant vertex further off the curve than the fit tolerance: the curve ends on the curve,
+  // next to it, and the vertex keeps its own tolerance (head_back vertex 1244 is 2.2e-8 m off edge
+  // 432, and pinning the end to it bent the fit 1.2e-8 m). Not where the surfaces touch, whose
+  // limit point is the one place there the curve is known.
+  else for(const k of [0,poly.length-1]){const P=poly[k],Q=poly[k?k-1:1];
+    if(singular(S1,S2,P,new Map()))continue;
+    try{const X=corrector(S1,S2,P,unit(sub(P,Q)),new Map());if(dist(X,P)>tol&&dist(X,P)<dist(P,Q)/4)poly[k]=X;}catch(x){}}
   const {ss,fn}=polyFn(S1,S2,poly);
   const r=fitPoints(fn,ss,tol,{fixed:poly});
   const [a,b]=G.curveRange(r.curve);
@@ -310,7 +317,12 @@ function contactEdge(e,c,p0,p1,tol){
   }
   const ta=paramOf(p0),tb=paramOf(p1),a=Math.min(ta,tb),z=Math.max(ta,tb),ss=[];
   for(let k=0;k<=16;k++)ss.push(a+(z-a)*k/16);
-  const r=fitPoints(fn,ss,tol,{ends:ta<tb?[p0,p1]:[p1,p0]});
+  // a tolerant vertex can sit off the contact curve: further off than the fit tolerance, the curve
+  // ends on its own point nearest the vertex instead (head_back vertex 1271, tolerance 2e-5 m, is
+  // 3.2e-7 m off edge 826's contact curve, vertex 1243 9.3e-8 m off edge 840's; pinning the ends to
+  // them bent the fits 4.7e-8 and 4.3e-8 m). The vertex keeps its own tolerance.
+  const endOf=(p,t)=>{const q=fn(t);return dist(p,q)<=tol?p:q;},q0=endOf(p0,ta),q1=endOf(p1,tb);
+  const r=fitPoints(fn,ss,tol,{ends:ta<tb?[q0,q1]:[q1,q0]});
   const [x,y]=G.curveRange(r.curve);
   return ta<=tb?{curve:r.curve,t0:x,t1:y,error:r.error}:{curve:r.curve,t0:y,t1:x,error:r.error};
 }
