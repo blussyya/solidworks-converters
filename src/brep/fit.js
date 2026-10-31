@@ -285,7 +285,17 @@ function contactEdge(e,c,p0,p1,tol){
     let a=Math.max(lo,best-(hi-lo)/K),z=Math.min(hi,best+(hi-lo)/K);
     for(let k=0;k<100;k++){const m1=a+(z-a)*0.382,m2=a+(z-a)*0.618;if(dist(fn(m1),p)<dist(fn(m2),p))z=m2;else a=m1;}
     return (a+z)/2;};
-  if(!p0)throw Error('blend boundary: closed contact curve');
+  if(!p0){
+    // a ring edge: the contact all the way round a closed spine (head_back's edge 362 on blend 3162).
+    // It runs the way the edge's chart does, reversed when the edge isn't sameSense.
+    if(dist(fn(lo),fn(hi))>tol)throw Error('blend boundary: closed contact curve on an open spine');
+    const ss=[];for(let k=0;k<=32;k++)ss.push(lo+(hi-lo)*k/32);
+    const r=fitPoints(fn,ss,tol,{ends:[fn(lo),fn(lo)]});
+    const ch=c.chart,want=mul(sub(ch[1],ch[0]),e.sameSense?1:-1),t=paramOf(ch[0]),h=(hi-lo)*1e-4;
+    const fwd=dot(sub(fn(Math.min(hi,t+h)),fn(Math.max(lo,t-h))),want)>0;
+    const [x,y]=G.curveRange(r.curve);
+    return fwd?{curve:r.curve,t0:x,t1:y,error:r.error}:{curve:r.curve,t0:y,t1:x,error:r.error};
+  }
   const ta=paramOf(p0),tb=paramOf(p1),a=Math.min(ta,tb),z=Math.max(ta,tb),ss=[];
   for(let k=0;k<=16;k++)ss.push(a+(z-a)*k/16);
   const r=fitPoints(fn,ss,tol,{ends:ta<tb?[p0,p1]:[p1,p0]});
