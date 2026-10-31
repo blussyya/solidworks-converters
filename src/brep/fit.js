@@ -264,9 +264,15 @@ function intersectionEdge(e,c,p0,p1,tol){
 }
 /* Contact curve of a blend with one support: Parasolid gives it as the intersection of the
  * support with a BLEND_BOUND surface; its points are the feet of the spine on the support. */
+function sameGeometry(a,b){
+  if(a.type!==b.type)return false;
+  const strip=x=>JSON.stringify(x,(k,v)=>k==='node'||k==='sense'?undefined:v);
+  return strip(a)===strip(b);
+}
 function contactEdge(e,c,p0,p1,tol){
   const [S1,S2]=c.surfaces,bb=S1.type==='blendBound'?S1:S2,S=bb===S1?S2:S1,b=bb.blend;
-  let i=b.surfaces.indexOf(S);if(i<0)i=bb.boundary-1;
+  // the support can be a second node with the same geometry (0739c559: cylinder 2494 is 2512)
+  let i=b.surfaces.indexOf(S);if(i<0)i=b.surfaces.findIndex(q=>sameGeometry(q,S));if(i<0)i=bb.boundary-1;
   if(i<0||i>1)throw Error('blend boundary: support not found');
   const sp=spineOf(b,tol).curve,cache=new Map(),fn=t=>contact(b,i,G.curvePoint(sp,t),cache);
   const [lo,hi]=G.curveRange(sp);
