@@ -210,9 +210,32 @@ function edgeCurve(e,c,p0,p1,opts){
   if(c.type==='intersection'){
     const [S1,S2]=c.surfaces;
     if(S1.type==='blendBound'||S2.type==='blendBound')return contactEdge(e,c,p0,p1,tol);
-    return intersectionEdge(e,c,p0,p1,tol);
+    return sweptPlaneEdge(e,c,p0,p1)||intersectionEdge(e,c,p0,p1,tol);
   }
   throw Error('fit: edge curve '+c.type);
+}
+/* A swept surface cut by a plane is its profile projected along the sweep onto the plane. The
+ * projection is affine, so a (rational) B-spline profile maps to an exact B-spline: same knots and
+ * weights, projected control points (d2515121's oval, where a march round a 0.7 mm loop never
+ * closed). Handles the closed edge, and an open one whose span doesn't cross the profile's seam. */
+function sweptPlaneEdge(e,c,p0,p1){
+  const [S1,S2]=c.surfaces,sw=S1.type==='swept'?S1:S2.type==='swept'?S2:null,pl=sw===S1?S2:S1;
+  if(!sw||pl.type!=='plane'||sw.curve.type!=='bspline')return null;
+  const dn=dot(sw.d,pl.n);if(Math.abs(dn)<1e-9)return null;
+  const curve={...sw.curve,ctrl:sw.curve.ctrl.map(P=>add(P,mul(sw.d,dot(sub(pl.p,P),pl.n)/dn)))};
+  const chart=c.chart,[lo,hi]=G.curveRange(curve);
+  const at=q=>{let best=0,bd=Infinity;chart.forEach((x,i)=>{const d=dist(x,q);if(d<bd){bd=d;best=i;}});return best;};
+  // the edge runs along the chart when sameSense
+  const way=q=>{const i=at(q),d=i<chart.length-1?sub(chart[i+1],chart[i]):sub(chart[i],chart[i-1]);return e.sameSense?d:mul(d,-1);};
+  if(!p0){
+    const r=G.curveProject(curve,chart[0]);if(r.d>1e-7)return null;
+    const fwd=dot(G.curveTangent(curve,r.t),way(chart[0]))>0;
+    return {curve,t0:fwd?lo:hi,t1:fwd?hi:lo,error:r.d};
+  }
+  const a=G.curveProject(curve,p0),b=G.curveProject(curve,p1);if(Math.max(a.d,b.d)>1e-7)return null;
+  const fwd=dot(G.curveTangent(curve,a.t),way(p0))>0;
+  if(fwd!==(b.t>a.t))return null;
+  return {curve,t0:a.t,t1:b.t,error:Math.max(a.d,b.d)};
 }
 function intersectionEdge(e,c,p0,p1,tol){
   const [S1,S2]=c.surfaces,chart=c.chart;
