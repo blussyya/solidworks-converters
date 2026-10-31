@@ -46,7 +46,7 @@ function need(a,cmd){if(!a[0]||a[0].startsWith('--')){console.error(`usage: sldp
 const commands={
  info(a){
   const S=require('../src'),file=need(a,'info'),opts={allowLargeSections:has(a,'--allow-large-sections')};const r=S.info(file,opts);
-  if(has(a,'--json')){console.log(JSON.stringify(r,null,2));return 0;}
+  if(has(a,'--json')){console.log(JSON.stringify(r,null,2));return r.container==='not a SolidWorks part'?1:0;}
   const L=[];
   L.push(`container   ${r.container}, ${r.bytes} bytes${r.containerError?' — '+r.containerError:''}`);
   if(r.saved&&r.saved.version){const s=r.saved,c=s.history.find(h=>h.created),d=h=>h.date?` (build ${h.date.year}/${String(h.date.day).padStart(3,'0')})`:'';

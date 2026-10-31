@@ -175,7 +175,12 @@ function chartMarch(S1,S2,A,B,chart){
 }
 function chartPoly(S1,S2,A,B,chart){
   const near=q=>{let best=0,bd=Infinity;chart.forEach((x,i)=>{const d=dist(x,q);if(d<bd){bd=d;best=i;}});return best;};
-  const ia=near(A),ib=near(B);if(ia===ib)return null;
+  let ia=near(A),ib=near(B);
+  // a closed curve starts and ends at the same limit, and so does its chart: follow it all the way
+  // round (head_back's blend 3139, whose ring spine came out as a zero-length line)
+  const n0=chart.length-1;
+  if(ia===ib&&n0>1&&dist(A,B)<1e-12&&dist(chart[0],A)<1e-12&&dist(chart[n0],A)<1e-12){ia=0;ib=n0;}
+  if(ia===ib)return null;
   const step=ib>ia?1:-1,way=[A];
   // the chart point nearest A is a waypoint when it lies past A towards the rest of the chart
   // (a blend's spine starts at a touching point with the first chart point just inside it)
@@ -210,9 +215,32 @@ function edgeCurve(e,c,p0,p1,opts){
   if(c.type==='intersection'){
     const [S1,S2]=c.surfaces;
     if(S1.type==='blendBound'||S2.type==='blendBound')return contactEdge(e,c,p0,p1,tol);
-    return intersectionEdge(e,c,p0,p1,tol);
+    return sweptPlaneEdge(e,c,p0,p1)||intersectionEdge(e,c,p0,p1,tol);
   }
   throw Error('fit: edge curve '+c.type);
+}
+/* A swept surface cut by a plane is its profile projected along the sweep onto the plane. The
+ * projection is affine, so a (rational) B-spline profile maps to an exact B-spline: same knots and
+ * weights, projected control points (d2515121's oval, where a march round a 0.7 mm loop never
+ * closed). Handles the closed edge, and an open one whose span doesn't cross the profile's seam. */
+function sweptPlaneEdge(e,c,p0,p1){
+  const [S1,S2]=c.surfaces,sw=S1.type==='swept'?S1:S2.type==='swept'?S2:null,pl=sw===S1?S2:S1;
+  if(!sw||pl.type!=='plane'||sw.curve.type!=='bspline')return null;
+  const dn=dot(sw.d,pl.n);if(Math.abs(dn)<1e-9)return null;
+  const curve={...sw.curve,ctrl:sw.curve.ctrl.map(P=>add(P,mul(sw.d,dot(sub(pl.p,P),pl.n)/dn)))};
+  const chart=c.chart,[lo,hi]=G.curveRange(curve);
+  const at=q=>{let best=0,bd=Infinity;chart.forEach((x,i)=>{const d=dist(x,q);if(d<bd){bd=d;best=i;}});return best;};
+  // the edge runs along the chart when sameSense
+  const way=q=>{const i=at(q),d=i<chart.length-1?sub(chart[i+1],chart[i]):sub(chart[i],chart[i-1]);return e.sameSense?d:mul(d,-1);};
+  if(!p0){
+    const r=G.curveProject(curve,chart[0]);if(r.d>1e-7)return null;
+    const fwd=dot(G.curveTangent(curve,r.t),way(chart[0]))>0;
+    return {curve,t0:fwd?lo:hi,t1:fwd?hi:lo,error:r.d};
+  }
+  const a=G.curveProject(curve,p0),b=G.curveProject(curve,p1);if(Math.max(a.d,b.d)>1e-7)return null;
+  const fwd=dot(G.curveTangent(curve,a.t),way(p0))>0;
+  if(fwd!==(b.t>a.t))return null;
+  return {curve,t0:a.t,t1:b.t,error:Math.max(a.d,b.d)};
 }
 function intersectionEdge(e,c,p0,p1,tol){
   const [S1,S2]=c.surfaces,chart=c.chart;
@@ -241,9 +269,15 @@ function intersectionEdge(e,c,p0,p1,tol){
 }
 /* Contact curve of a blend with one support: Parasolid gives it as the intersection of the
  * support with a BLEND_BOUND surface; its points are the feet of the spine on the support. */
+function sameGeometry(a,b){
+  if(a.type!==b.type)return false;
+  const strip=x=>JSON.stringify(x,(k,v)=>k==='node'||k==='sense'?undefined:v);
+  return strip(a)===strip(b);
+}
 function contactEdge(e,c,p0,p1,tol){
   const [S1,S2]=c.surfaces,bb=S1.type==='blendBound'?S1:S2,S=bb===S1?S2:S1,b=bb.blend;
-  let i=b.surfaces.indexOf(S);if(i<0)i=bb.boundary-1;
+  // the support can be a second node with the same geometry (0739c559: cylinder 2494 is 2512)
+  let i=b.surfaces.indexOf(S);if(i<0)i=b.surfaces.findIndex(q=>sameGeometry(q,S));if(i<0)i=bb.boundary-1;
   if(i<0||i>1)throw Error('blend boundary: support not found');
   const sp=spineOf(b,tol).curve,cache=new Map(),fn=t=>contact(b,i,G.curvePoint(sp,t),cache);
   const [lo,hi]=G.curveRange(sp);
@@ -251,7 +285,17 @@ function contactEdge(e,c,p0,p1,tol){
     let a=Math.max(lo,best-(hi-lo)/K),z=Math.min(hi,best+(hi-lo)/K);
     for(let k=0;k<100;k++){const m1=a+(z-a)*0.382,m2=a+(z-a)*0.618;if(dist(fn(m1),p)<dist(fn(m2),p))z=m2;else a=m1;}
     return (a+z)/2;};
-  if(!p0)throw Error('blend boundary: closed contact curve');
+  if(!p0){
+    // a ring edge: the contact all the way round a closed spine (head_back's edge 362 on blend 3162).
+    // It runs the way the edge's chart does, reversed when the edge isn't sameSense.
+    if(dist(fn(lo),fn(hi))>tol)throw Error('blend boundary: closed contact curve on an open spine');
+    const ss=[];for(let k=0;k<=32;k++)ss.push(lo+(hi-lo)*k/32);
+    const r=fitPoints(fn,ss,tol,{ends:[fn(lo),fn(lo)]});
+    const ch=c.chart,want=mul(sub(ch[1],ch[0]),e.sameSense?1:-1),t=paramOf(ch[0]),h=(hi-lo)*1e-4;
+    const fwd=dot(sub(fn(Math.min(hi,t+h)),fn(Math.max(lo,t-h))),want)>0;
+    const [x,y]=G.curveRange(r.curve);
+    return fwd?{curve:r.curve,t0:x,t1:y,error:r.error}:{curve:r.curve,t0:y,t1:x,error:r.error};
+  }
   const ta=paramOf(p0),tb=paramOf(p1),a=Math.min(ta,tb),z=Math.max(ta,tb),ss=[];
   for(let k=0;k<=16;k++)ss.push(a+(z-a)*k/16);
   const r=fitPoints(fn,ss,tol,{ends:ta<tb?[p0,p1]:[p1,p0]});
@@ -343,7 +387,9 @@ function reanchor(S,c,p0,p1,N,tol){
       return bvv;};
     const tA=anchors(p0),tB=anchors(p1);
     const startU=us[0],mid=(umin+umax)/2;
-    const fwd=startU<mid?tA<=tB:tB<=tA;
+    // the fit runs from the lower anchor to the higher, so the anchors give the direction; the
+    // 2D curve's start only decides a tie (both ends found at the same parameter)
+    const fwd=tA!==tB?tA<tB:startU<mid;
     const b0=Math.min(tA,tB),b1=Math.max(tA,tB);
     const ends=fwd?[p0,p1]:[p1,p0];
     const r=fitPoints(s=>G.surfaceEval(S,b0+(b1-b0)*s,vc).p,
@@ -404,7 +450,11 @@ function blendSurface(b,face,N,opts){
       for(let k=1;k<8;k++)pts.push(G.curvePoint(c,a+dz*k/8));}}
   const ref=G.curveProject(sp,pts[0]).t;
   // a boundary point is at distance r from its section's centre
-  const ts=pts.map(q=>spineParam(sp,q,ref));
+  // (the local projection from `ref` can stick at the spine's end when ref is a T limit; the global
+  // one is then the right section: head_back's far vertices are 1 mm from t = 0.15, not from t = 1)
+  const off=(q,t)=>Math.abs(dist(q,G.curvePoint(sp,t))-r);
+  const ts=pts.map(q=>{const t=spineParam(sp,q,ref);if(G.periodic(sp))return t;
+    const g=G.curveProject(sp,q).t;return off(q,g)<off(q,t)-1e-9?g:t;});
   let t0=Math.min(...ts),t1=Math.max(...ts);
   const span=t1-t0;
   const lim=[b.start,b.end].filter(Boolean).filter(x=>x.type==='T').map(x=>spineParam(sp,x.p,ref));

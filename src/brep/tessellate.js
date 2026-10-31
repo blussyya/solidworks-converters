@@ -44,6 +44,7 @@ function sampleEdge(e,M,tol){
   function rec(a,b,A,B,depth){
     const m=(a+b)/2,Mp=at(m);
     if(depth<20&&(segDist(Mp,A,B)>tol||segDist(at(a+(b-a)/4),A,B)>tol||segDist(at(a+3*(b-a)/4),A,B)>tol)){rec(a,m,A,Mp,depth+1);rec(m,b,Mp,B,depth+1);}
+    else if(depth>=20&&(segDist(Mp,A,B)>tol||segDist(at(a+(b-a)/4),A,B)>tol||segDist(at(a+3*(b-a)/4),A,B)>tol))throw Error('tessellate: edge '+e.id+' still off its chord after 20 bisections');
     else out.push(B);
   }
   for(let i=0;i+1<ts.length;i++)rec(ts[i],ts[i+1],out[out.length-1],at(ts[i+1]),0);
@@ -243,6 +244,8 @@ function refine(pts,tris,boundary,ev,tol,limit,su,sv){
     }
     queue=[...new Set([...nextQ,...(nextQ.length?flips(keysOf(nextQ)):[])])];
   }
+  // stopped by the cap with triangles still off the surface: the tolerance isn't met
+  if(queue.length&&T.length>=limit)throw Error('tessellate: a face hit the triangle cap ('+limit+') before reaching the tolerance');
   return T.filter(Boolean);
 }
 

@@ -99,7 +99,7 @@ function write(M,opts){
         break;}
       case 'swept':id=emit("SURFACE_OF_LINEAR_EXTRUSION('',"+curve(s.curve)+','+emit("VECTOR('',"+dir(s.d)+',1.)')+')');break;
       case 'spun':id=emit("SURFACE_OF_REVOLUTION('',"+curve(s.curve)+','+emit("AXIS1_PLACEMENT('',"+pt(s.c)+','+dir(s.a)+')')+')');break;
-      case 'offset':id=emit("OFFSET_SURFACE('',"+surface(s.basis)+','+real(s.d*S)+',.F.)');break;
+      case 'offset':id=emit("OFFSET_SURFACE('',"+surface(s.basis)+','+real((s.basis.sense===-1?-s.d:s.d)*S)+',.F.)');break;
       default:throw Error('STEP write: surface type '+s.type);
     }
     surfMemo.set(s,id);return id;

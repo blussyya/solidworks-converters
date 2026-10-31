@@ -47,7 +47,8 @@ function resolve(N,opts){
       const r=Fit.blendSurface(s,f,N,{tolerance:tol});
       out=r.surface;report.fittedSurfaces++;report.errors.surface=Math.max(report.errors.surface,r.error);
     }else if(s.type==='offset'&&s.basis&&s.basis.type==='blend'){
-      // an offset of a blend (2013 head_back has 144 of them): the blend underneath is fitted too
+      // an offset of a blend: the blend underneath is fitted too (none in the online sample; head_back's
+      // 144 offsets are of B-splines and swept surfaces, EXP-086)
       out={...s,basis:surface(s.basis,f)};
     }else if(s.type==='blendBound')throw Error('resolve: face '+f.id+' lies on a blend boundary surface');
     surfMemo.set(s,out);return out;
@@ -59,7 +60,7 @@ function resolve(N,opts){
     const p0=e.v?P(e.v[0]):null,p1=e.v?P(e.v[1]):null;
     let out;
     if(c.type==='line'||c.type==='circle'||c.type==='ellipse'||(c.type==='bspline'&&c.dim!==2)){
-      out={curve:c,...range(c,e.sameSense,p0,p1,e)};report.exactEdges++;
+      out={curve:c,...range(c,e.sameSense,p0,p1,e,e.v?Math.max(...e.v.map(v=>N.vertices.get(v).tolerance||0)):0)};report.exactEdges++;
     }else if(c.type==='spcurve'||c.type==='intersection'){
       // fit against the resolved surfaces, not the raw ones: an SP_CURVE pcurve on a blend
       // surface must see the fitted B-spline. Its raw (u,v) is Parasolid's own blend parameter,
@@ -68,7 +69,7 @@ function resolve(N,opts){
       if(c.type==='spcurve')c={...c,surface:surfMemo.get(c.surface)||c.surface};
       // a blend's contact curve (one surface a BLEND_BOUND) is built from the raw blend and its
       // raw supports, which may be blends themselves; the fitted copies would not be found there
-      else if(!c.surfaces.some(q=>q.type==='blendBound'))c={...c,surfaces:c.surfaces.map(q=>surfMemo.get(q)||q)};
+      else if(!c.surfaces.some(q=>q.type==='blendBound'))c={...c,surfaces:c.surfaces.map(q=>q.type==='blend'&&Math.abs(Math.abs(q.range[0])-Math.abs(q.range[1]))<1e-12?q:surfMemo.get(q)||q)};
       const r=Fit.edgeCurve(e,c,p0,p1,{tolerance:tol,faceOf});
       out={curve:r.curve,t0:r.t0,t1:r.t1,fit:r.error};report.fittedCurves++;report.errors.curve=Math.max(report.errors.curve,r.error);
     }else throw Error('resolve: edge '+e.id+' curve '+c.type);
@@ -105,7 +106,7 @@ function resolve(N,opts){
 }
 
 /* Parameters of an exact curve between the edge's vertices, in the edge's direction. */
-function range(c,same,p0,p1,e){
+function range(c,same,p0,p1,e,vtol){
   const proj=p=>G.curveProject(c,p);
   if(!p0){   // closed edge without a vertex
     if(c.type==='circle'||c.type==='ellipse')return same?{t0:0,t1:TAU}:{t0:TAU,t1:0};
@@ -113,7 +114,8 @@ function range(c,same,p0,p1,e){
   }
   const a=proj(p0),b=proj(p1);
   const gap=Math.max(a.d,b.d);
-  if(gap>Math.max(1e-6,(e.tolerance||0)*2))throw Error('resolve: edge '+e.id+' vertices are '+gap.toExponential(2)+' m off its curve');
+  // a tolerant vertex may sit off the curve by up to its own tolerance (0739c559: 30 µm of 48)
+  if(gap>Math.max(1e-6,(e.tolerance||0)*2,vtol||0))throw Error('resolve: edge '+e.id+' vertices are '+gap.toExponential(2)+' m off its curve');
   let t0=a.t,t1=b.t;
   if(c.type==='circle'||c.type==='ellipse'){
     if(same){t1=t0+mod(t1-t0,TAU);if(t1-t0<1e-12)t1=t0+TAU;}

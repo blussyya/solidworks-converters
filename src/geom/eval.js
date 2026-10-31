@@ -68,7 +68,23 @@ function bsplineCurve(c,t){
     P=add(P,mul(c.ctrl[i],B[j]*w));dP=add(dP,mul(c.ctrl[i],D[j]*w));W+=B[j]*w;dW+=D[j]*w;}
   const p=mul(P,1/W);return {p,d:mul(sub(dP,mul(p,dW)),1/W)};
 }
+/* Past its knot range a B-spline surface carries on along its edge tangent: S(u, v0) + (v - v0)·Sv
+ * (head_back's spine charts run up to 2.3 parameter units past an offset's basis edge, and lie
+ * exactly |offset| from this extension, EXP-086). A wrapping direction never leaves its range. */
 function bsplineSurface(s,u,v){
+  const nu=s.ctrl.length,nv=s.ctrl[0].length,u0=s.ku[s.du],u1=s.ku[nu],v0=s.kv[s.dv],v1=s.kv[nv];
+  const uc=wrapsU(s)?u:Math.min(u1,Math.max(u0,u)),vc=wrapsV(s)?v:Math.min(v1,Math.max(v0,v));
+  if(uc===u&&vc===v)return bsplineCore(s,u,v);
+  const e=bsplineCore(s,uc,vc),a=u-uc,b=v-vc;
+  // the cross derivative turns the edge's own tangent as the extension leaves it
+  let du=e.du,dv=e.dv;
+  if(b&&!a){const h=1e-6*(u1-u0),U1=bsplineCore(s,Math.min(u1,uc+h),vc),U0=bsplineCore(s,Math.max(u0,uc-h),vc);
+    du=add(e.du,mul(sub(U1.dv,U0.dv),b/(Math.min(u1,uc+h)-Math.max(u0,uc-h))));}
+  if(a&&!b){const h=1e-6*(v1-v0),V1=bsplineCore(s,uc,Math.min(v1,vc+h)),V0=bsplineCore(s,uc,Math.max(v0,vc-h));
+    dv=add(e.dv,mul(sub(V1.du,V0.du),a/(Math.min(v1,vc+h)-Math.max(v0,vc-h))));}
+  return {p:add(e.p,add(mul(e.du,a),mul(e.dv,b))),du,dv};
+}
+function bsplineCore(s,u,v){
   const nu=s.ctrl.length,nv=s.ctrl[0].length,ku=span(s.ku,s.du,nu,u),kv=span(s.kv,s.dv,nv,v);
   const bu=basis(s.ku,s.du,ku,u),bv=basis(s.kv,s.dv,kv,v);
   let P=[0,0,0],Pu=[0,0,0],Pv=[0,0,0],W=0,Wu=0,Wv=0;
@@ -153,10 +169,12 @@ function surfaceEval(s,u,v){
       return {p:add(e.p,mul(s.d,v)),du:e.d,dv:s.d};}
     case 'spun':{const q=sub(curvePoint(s.curve,v),s.c),dq=curveTangent(s.curve,v),p=add(s.c,rotate(q,s.a,u));
       return {p,du:cross(s.a,sub(p,s.c)),dv:rotate(dq,s.a,u)};}
-    case 'offset':{const e=surfaceEval(s.basis,u,v),n=unit(cross(e.du,e.dv)),h=1e-6;
-      const pu=k=>{const f=surfaceEval(s.basis,u+k,v);return add(f.p,mul(unit(cross(f.du,f.dv)),s.d));};
-      const pv=k=>{const f=surfaceEval(s.basis,u,v+k);return add(f.p,mul(unit(cross(f.du,f.dv)),s.d));};
-      return {p:add(e.p,mul(n,s.d)),du:mul(sub(pu(h),pu(-h)),1/(2*h)),dv:mul(sub(pv(h),pv(-h)),1/(2*h))};}
+    // the offset runs along the basis's own normal, which its sense reverses: every offset in the
+    // online sample whose curve charts say which side it's on agrees (791 of them, EXP-086)
+    case 'offset':{const e=surfaceEval(s.basis,u,v),n=unit(cross(e.du,e.dv)),h=1e-6,d=s.basis.sense===-1?-s.d:s.d;
+      const pu=k=>{const f=surfaceEval(s.basis,u+k,v);return add(f.p,mul(unit(cross(f.du,f.dv)),d));};
+      const pv=k=>{const f=surfaceEval(s.basis,u,v+k);return add(f.p,mul(unit(cross(f.du,f.dv)),d));};
+      return {p:add(e.p,mul(n,d)),du:mul(sub(pu(h),pu(-h)),1/(2*h)),dv:mul(sub(pv(h),pv(-h)),1/(2*h))};}
   }
   throw Error('surfaceEval: '+s.type);
 }
@@ -176,6 +194,15 @@ function surfaceInverse(s,p,near){
     case 'torus':{const q=sub(p,s.c),y=cross(s.a,s.x),u=Math.atan2(dot(q,y),dot(q,s.x)),r=add(mul(s.x,Math.cos(u)),mul(y,Math.sin(u))),w=sub(q,mul(r,s.R));
       return {u,v:Math.atan2(dot(w,s.a),dot(w,r))};}
     case 'bspline':{if(near){const r=bsplineNewton(s,p,near.u,near.v);if(r)return r;}const r=bsplineProject(s,p);return {u:r.u,v:r.v};}
+    // the nearest point on an offset and on its basis lie on one normal line: same (u, v)
+    case 'offset':{
+      // an offset can reach past its basis's edge, where the basis carries on along its tangent:
+      // a foot clamped to the edge is followed on out by Newton without the clamp
+      const q=s.basis;if(q.type!=='bspline')return surfaceInverse(q,p,near);
+      const [[u0,u1],[v0,v1]]=surfaceRange(q),out=r=>(!wrapsU(q)&&(r.u<=u0||r.u>=u1))||(!wrapsV(q)&&(r.v<=v0||r.v>=v1));
+      if(near){const x=bsplineNewton(q,p,near.u,near.v,true);if(x)return x;}
+      const r=surfaceInverse(q,p,near);if(!out(r))return r;
+      return bsplineNewton(q,p,r.u,r.v,true)||r;}
   }
   return genericInverse(s,p,near);
 }
@@ -257,13 +284,38 @@ function bsplineProject1(s,p,u,v){
   return {u,v,d,signed:d===0?0:Math.sign(dot(r,n))*d,n};
 }
 /* Gauss-Newton from (u, v); null when it does not settle. */
-function bsplineNewton(s,p,u,v){
+function bsplineNewton(s,p,u,v,free){
   const nu=s.ctrl.length,nv=s.ctrl[0].length,u0=s.ku[s.du],u1=s.ku[nu],v0=s.kv[s.dv],v1=s.kv[nv];
+  // `free` is the foot for an offset: it may leave the knot range for the surface's tangent extension
+  // (see bsplineSurface), and it uses Newton with the curvature term, since Gauss-Newton alone
+  // converges only linearly when p is well off the surface (head_back's 9 mm offsets of B-splines
+  // took 30 steps and still hadn't settled). The second derivatives come from differencing the exact
+  // first ones; they set the rate, not the answer. Plain feet keep Gauss-Newton: on 5f8e9db3's spring,
+  // coils a fraction of a millimetre apart, the curvature step and the looser stop below both let the
+  // foot settle on the wrong coil (curve error 8.9e-9 m became 2.2e-3 m).
+  const hu=1e-6*(u1-u0),hv=1e-6*(v1-v0);
   for(let it=0;it<30;it++){
-    const e=bsplineSurface(s,u,v),r=sub(p,e.p),a=dot(e.du,e.du),b=dot(e.du,e.dv),c=dot(e.dv,e.dv),det=a*c-b*b;if(!det)return null;
-    const x=dot(r,e.du),y=dot(r,e.dv),su=(c*x-b*y)/det,sv=(a*y-b*x)/det,nu2=keepIn(u0,u1,u+su,wrapsU(s)),nv2=keepIn(v0,v1,v+sv,wrapsV(s));
+    const e=bsplineSurface(s,u,v),r=sub(p,e.p);let a=dot(e.du,e.du),b=dot(e.du,e.dv),c=dot(e.dv,e.dv);
+    if(free){
+      const U1=bsplineSurface(s,u+hu,v),U0=bsplineSurface(s,u-hu,v),V1=bsplineSurface(s,u,v+hv),V0=bsplineSurface(s,u,v-hv);
+      const ruu=dot(r,sub(U1.du,U0.du))/(2*hu),rvv=dot(r,sub(V1.dv,V0.dv))/(2*hv),ruv=(dot(r,sub(U1.dv,U0.dv))/(2*hu)+dot(r,sub(V1.du,V0.du))/(2*hv))/2;
+      if(a-ruu>0&&(a-ruu)*(c-rvv)-(b-ruv)**2>0){a-=ruu;b-=ruv;c-=rvv;}
+    }
+    const det=a*c-b*b;if(!det)return null;
+    const x=dot(r,e.du),y=dot(r,e.dv),su=(c*x-b*y)/det,sv=(a*y-b*x)/det,nu2=free?u+su:keepIn(u0,u1,u+su,wrapsU(s)),nv2=free?v+sv:keepIn(v0,v1,v+sv,wrapsV(s));
     if((Math.abs(nu2-u)<1e-15*(1+Math.abs(u))||Math.abs(su)<1e-15*(1+Math.abs(u)))&&(Math.abs(nv2-v)<1e-15*(1+Math.abs(v))||Math.abs(sv)<1e-15*(1+Math.abs(v))))return {u:nu2,v:nv2};
+    // or the step moves the point by less than 1e-14 m (the parameter test alone can miss that by
+    // rounding on a wide knot range, and the caller then searches the whole surface again)
+    if(free&&norm(add(mul(e.du,nu2-u),mul(e.dv,nv2-v)))<1e-14)return {u:nu2,v:nv2};
     u=nu2;v=nv2;
+  }
+  // at a knot-range edge the curvature jumps (polynomial inside, flat extension outside) and the
+  // differenced second derivatives straddle it, so Newton can rock across the edge: finish there
+  // with plain Gauss-Newton, which only needs the exact first derivatives
+  if(free)for(let it=0;it<400;it++){
+    const e=bsplineSurface(s,u,v),r=sub(p,e.p),a=dot(e.du,e.du),b=dot(e.du,e.dv),c=dot(e.dv,e.dv),det=a*c-b*b;if(!det)return null;
+    const x=dot(r,e.du),y=dot(r,e.dv),su=(c*x-b*y)/det,sv=(a*y-b*x)/det;u+=su;v+=sv;
+    if(norm(add(mul(e.du,su),mul(e.dv,sv)))<1e-14)return {u,v};
   }
   return null;   // did not settle: the caller searches afresh
 }
