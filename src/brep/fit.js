@@ -175,7 +175,12 @@ function chartMarch(S1,S2,A,B,chart){
 }
 function chartPoly(S1,S2,A,B,chart){
   const near=q=>{let best=0,bd=Infinity;chart.forEach((x,i)=>{const d=dist(x,q);if(d<bd){bd=d;best=i;}});return best;};
-  const ia=near(A),ib=near(B);if(ia===ib)return null;
+  let ia=near(A),ib=near(B);
+  // a closed curve starts and ends at the same limit, and so does its chart: follow it all the way
+  // round (head_back's blend 3139, whose ring spine came out as a zero-length line)
+  const n0=chart.length-1;
+  if(ia===ib&&n0>1&&dist(A,B)<1e-12&&dist(chart[0],A)<1e-12&&dist(chart[n0],A)<1e-12){ia=0;ib=n0;}
+  if(ia===ib)return null;
   const step=ib>ia?1:-1,way=[A];
   // the chart point nearest A is a waypoint when it lies past A towards the rest of the chart
   // (a blend's spine starts at a touching point with the first chart point just inside it)
