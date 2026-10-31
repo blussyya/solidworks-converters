@@ -2,7 +2,7 @@
 
 Reads SolidWorks part files (.SLDPRT) without SolidWorks and turns them into STL or STEP. It's plain Node, no dependencies, Node 18 or newer.
 
-The STEP comes straight from the Parasolid body stored inside the part, so planes, cylinders, cones, B-spline faces and their edges come out as the exact geometry the file holds. It doesn't re-fit anything from the display mesh. STL is triangulated from that same body.
+The STEP comes straight from the Parasolid body stored inside the part, so planes, cylinders, cones, B-spline faces and their edges come out as the exact geometry the file holds. It doesn't re-fit anything from the display mesh. STL comes from the display mesh SolidWorks saves in the part, and the body is only triangulated when a part has no display mesh.
 
 It reads modern parts (SolidWorks 2015 and later) and the older OLE2 parts from SolidWorks 2011.
 
@@ -20,7 +20,7 @@ Or clone it and run `node bin/sldprt.js` from the folder.
 sldprt convert part.SLDPRT
 ```
 
-With no flags it writes `part.stl` and `part.step` next to the input. Pick one or name the output:
+With no flags it writes `part.converted.stl` and `part.converted.step` next to the input. Pick one or name the output:
 
 ```bash
 sldprt convert part.SLDPRT --step out.step --stl out.stl --ascii
