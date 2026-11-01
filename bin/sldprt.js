@@ -10,6 +10,7 @@
  *   sldprt render  <model.SLDPRT> [out.png]            six-view PNG contact sheet
  *   sldprt view    <model.SLDPRT> [--still] [--dark]   interactive terminal viewer
  *   sldprt serve   [--port N] [--host H] [--open]      browser viewer
+ *   sldprt inspect <model.SLDPRT> [--port N] [--host H] [--open]   interactive B-rep inspector
  */
 const fs=require('fs'),path=require('path');
 
@@ -35,6 +36,8 @@ const USAGE=`usage: sldprt <command> [options]
                                             interactive terminal viewer (truecolor terminal)
   serve   [--port 8080] [--host 127.0.0.1] [--open]
                                             browser viewer at /web/index.html
+  inspect <model.SLDPRT> [--port 8081] [--host 127.0.0.1] [--open] [--allow-large-sections]
+                                            local B-rep inspector: faces, extensions, blend spines
 
 Formats: modern SLDPRT (SolidWorks 2015+) and SolidWorks 2011 OLE2 parts. See README.md.`;
 
@@ -116,6 +119,15 @@ const commands={
   const s=R.renderSheet(file,out,{});console.log(out);console.log(JSON.stringify(s));return 0;
  },
  view(a){return require('../src/terminal-viewer').main(['node','sldprt view',...a]);},
+ inspect(a){
+  const file=need(a,'inspect');
+  process.stdout.write('loading '+file+' ...');
+  require('../src/inspect').start(file,{port:opt(a,'--port','8081'),host:opt(a,'--host','127.0.0.1'),open:has(a,'--open'),allowLargeSections:has(a,'--allow-large-sections')})
+   .then(({url,model})=>console.log(` ${model.M.faces.length} faces in ${model.loadMs} ms\n\n  SLDPRT inspector  ${url}\n  stop              Ctrl-C\n`))
+   .catch(e=>{console.error('\ncannot start: '+e.message);process.exit(1);});
+  process.on('SIGINT',()=>process.exit(0));
+  return null;
+ },
  serve(a){
   require('../src/serve').start({port:opt(a,'--port','8080'),host:opt(a,'--host','127.0.0.1'),open:has(a,'--open')})
    .then(({url})=>console.log(`\n  SLDPRT viewer  ${url}\n  stop          Ctrl-C\n`))

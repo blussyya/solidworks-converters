@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B-rep Inspector</title>
+<style>
+:root{
+  --bg:#eef0f3; --panel:#ffffff; --ink:#1a1f26; --muted:#667080; --rule:#d5dae1; --sel:#dbe8fb;
+  --viewport:#e6e9ee; --accent:#1f5fbf; --blue:#1f6fe0; --orange:#e8820c; --dot:#d4271c; --black:#000;
+  --halo:#ffffff;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1318; --panel:#171c23; --ink:#e4e8ee; --muted:#8c96a5; --rule:#2a313b; --sel:#1f3556;
+  --viewport:#12171d; --accent:#6aa5ff; --blue:#4a95ff; --orange:#ff9a2e; --dot:#ff6a5c; --black:#000;
+  --halo:#f2f2f2;
+}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column}
+header{display:flex;align-items:baseline;gap:14px;padding:8px 14px;border-bottom:1px solid var(--rule);background:var(--panel)}
+header h1{font-size:15px;margin:0}
+#file{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#counts{margin-left:auto;color:var(--muted);font-size:12.5px;white-space:nowrap}
+main{flex:1;display:grid;grid-template-columns:260px 1fr 300px;min-height:0}
+@media (max-width:900px){main{grid-template-columns:1fr;grid-template-rows:200px 60vh auto;overflow:auto}}
+aside{background:var(--panel);display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--rule)}
+aside.info{border-right:0;border-left:1px solid var(--rule);overflow:auto;padding:12px 14px}
+#search{margin:8px;padding:6px 8px;border:1px solid var(--rule);border-radius:5px;background:var(--bg);color:var(--ink);font:inherit}
+#list{flex:1;overflow:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
+#list div{padding:2px 10px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+#list div:hover{background:var(--bg)}
+#list div.on{background:var(--sel)}
+#list span.t{color:var(--muted)}
+#listnote{padding:4px 10px;color:var(--muted);font-size:12px;border-top:1px solid var(--rule)}
+#view{position:relative;background:var(--viewport);min-height:0;min-width:0}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#bar{position:absolute;left:8px;top:8px;display:flex;flex-wrap:wrap;gap:6px}
+button{font:inherit;font-size:12.5px;padding:4px 9px;border:1px solid var(--rule);background:var(--panel);color:var(--ink);border-radius:5px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button[aria-pressed=false]{color:var(--muted)}
+#hint{position:absolute;left:8px;bottom:6px;font-size:11.5px;color:var(--muted)}
+#msg{position:absolute;right:8px;bottom:6px;font-size:12px;color:var(--muted);max-width:60%;text-align:right}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:14px 0 6px}
+h2:first-child{margin-top:0}
+dl{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:0;font-size:13px}
+dt{color:var(--muted)} dd{margin:0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;overflow-wrap:anywhere}
+ul{margin:0;padding-left:18px;font-size:13px}
+.sw{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.sw.dot{border-radius:50%}
+.warn{color:var(--orange)}
+p.s{margin:4px 0;font-size:13px}
+</style>
+</head>
+<body>
+<header><h1>B-rep Inspector</h1><span id="file"></span><span id="counts"></span></header>
+<main>
+  <aside>
+    <input id="search" placeholder="Search by id or type (e.g. 2478, blend)" autocomplete="off">
+    <div id="list"></div>
+    <div id="listnote"></div>
+  </aside>
+  <div id="view">
+    <canvas id="gl"></canvas>
+    <div id="bar">
+      <button id="bMesh" aria-pressed="true">Mesh: shaded</button>
+      <button id="bExt" aria-pressed="true">Extension</button>
+      <button id="bEdges" aria-pressed="true">Edges</button>
+      <button id="bFit" aria-pressed="true">Frame selection</button>
+      <button id="bHome" aria-pressed="true">Reset view</button>
+    </div>
+    <div id="hint">drag: orbit &middot; shift/right-drag: pan &middot; wheel: zoom &middot; click mesh: select</div>
+    <div id="msg"></div>
+  </div>
+  <aside class="info" id="info"></aside>
+</main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function rgb(c){c=c.trim();if(c[0]==='#'){if(c.length===4)c='#'+c[1]+c[1]+c[2]+c[2]+c[3]+c[3];return [1,3,5].map(i=>parseInt(c.substr(i,2),16)/255);}return [.5,.5,.5];}
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const fmt=x=>typeof x==='number'?(Math.abs(x)>=1e4||(x!==0&&Math.abs(x)<1e-3)?x.toExponential(4):String(+x.toPrecision(7))):String(x);
+
+/* ---------------- GL ---------------- */
+const canvas=$('gl'),gl=canvas.getContext('webgl',{antialias:true,alpha:false,preserveDrawingBuffer:true});
+function prog(vs,fs){
+  const p=gl.createProgram();
+  for(const [t,s] of [[gl.VERTEX_SHADER,vs],[gl.FRAGMENT_SHADER,fs]]){const h=gl.createShader(t);gl.shaderSource(h,s);gl.compileShader(h);
+    if(!gl.getShaderParameter(h,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(h));gl.attachShader(p,h);}
+  gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));
+  p.u={};for(let i=0,n=gl.getProgramParameter(p,gl.ACTIVE_UNIFORMS);i<n;i++){const a=gl.getActiveUniform(p,i);p.u[a.name]=gl.getUniformLocation(p,a.name);}
+  return p;
+}
+let P={};
+if(gl){
+ P.tri=prog(`attribute vec3 a;attribute vec3 n;uniform mat4 M;varying vec3 vn;void main(){vn=n;gl_Position=M*vec4(a,1.);}`,
+  `precision mediump float;varying vec3 vn;uniform vec3 col;uniform float alpha;uniform vec3 L;
+   void main(){vec3 n=normalize(vn);if(!gl_FrontFacing)n=-n;float d=abs(dot(n,L))*.6+.4;gl_FragColor=vec4(col*d,alpha);}`);
+ P.flat=prog(`attribute vec3 a;uniform mat4 M;void main(){gl_Position=M*vec4(a,1.);}`,
+  `precision mediump float;uniform vec3 col;uniform float alpha;void main(){gl_FragColor=vec4(col,alpha);}`);
+ P.pt=prog(`attribute vec3 a;uniform mat4 M;uniform float size;void main(){gl_Position=M*vec4(a,1.);gl_PointSize=size;}`,
+  `precision mediump float;uniform vec3 col;uniform vec3 halo;void main(){vec2 c=gl_PointCoord-.5;float r=length(c);if(r>.5)discard;gl_FragColor=vec4(r>.36?halo:col,1.);}`);
+ P.id=prog(`attribute vec3 a;uniform mat4 M;void main(){gl_Position=M*vec4(a,1.);}`,
+  `precision mediump float;uniform vec3 col;void main(){gl_FragColor=vec4(col,1.);}`);
+}
+function buf(data,type){const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);b.n=data.length/(type||3);return b;}
+function attr(p,name,b,size){const l=gl.getAttribLocation(p,name);if(l<0)return;gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.enableVertexAttribArray(l);gl.vertexAttribPointer(l,size||3,gl.FLOAT,false,0,0);}
+function dis(p,names){for(const n of names){const l=gl.getAttribLocation(p,n);if(l>=0)gl.disableVertexAttribArray(l);}}
+
+/* ---------------- state ---------------- */
+const st={summary:null,faces:[],meshInfo:null,mesh:null,sel:null,face:null,meshMode:0,showExt:true,showEdges:true,
+  yaw:-0.8,pitch:0.5,dist:1,target:[0,0,0],home:null,pan:[0,0,0],cache:new Map(),selDraw:null};
+const MODES=['shaded','translucent','hidden'];
+let autoTrans=false;
+
+/* ---------------- matrices ---------------- */
+function persp(f,a,n,fr){const t=1/Math.tan(f/2);return [t/a,0,0,0, 0,t,0,0, 0,0,(fr+n)/(n-fr),-1, 0,0,2*fr*n/(n-fr),0];}
+function mul(a,b){const o=new Array(16);for(let i=0;i<4;i++)for(let j=0;j<4;j++){let s=0;for(let k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];o[i*4+j]=s;}return o;}
+function camera(){
+  // Z up. Eye on a sphere around target.
+  const cy=Math.cos(st.yaw),sy=Math.sin(st.yaw),cp=Math.cos(st.pitch),sp=Math.sin(st.pitch);
+  const dir=[cp*cy,cp*sy,sp],t=st.target;
+  const eye=[t[0]+dir[0]*st.dist,t[1]+dir[1]*st.dist,t[2]+dir[2]*st.dist];
+  const f=dir.map(x=>-x);                                    // forward
+  let r=[-f[1],f[0],0];const rl=Math.hypot(...r)||1;r=r.map(x=>x/rl);   // right = f x up(0,0,1)
+  const u=[r[1]*f[2]-r[2]*f[1],r[2]*f[0]-r[0]*f[2],r[0]*f[1]-r[1]*f[0]];
+  const V=[r[0],u[0],-f[0],0, r[1],u[1],-f[1],0, r[2],u[2],-f[2],0,
+    -(r[0]*eye[0]+r[1]*eye[1]+r[2]*eye[2]),-(u[0]*eye[0]+u[1]*eye[1]+u[2]*eye[2]),(f[0]*eye[0]+f[1]*eye[1]+f[2]*eye[2]),1];
+  const near=st.dist*0.01,far=st.dist*100;
+  return {M:mul(persp(0.6,canvas.width/canvas.height,near,far),V),right:r,up:u,eye};
+}
+
+/* ---------------- loading ---------------- */
+async function jget(u){const r=await fetch(u);const j=await r.json();if(!r.ok)throw Error(j.error||r.status);return j;}
+function b64(s,T){const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return new T(u.buffer);}
+
+function buildMesh(m){
+  const pos=b64(m.pos,Float32Array),idx=b64(m.idx,Uint32Array),nT=idx.length/3;
+  const P3=new Float32Array(nT*9),N3=new Float32Array(nT*9),ids=new Float32Array(nT*9);
+  for(let t=0;t<nT;t++){
+    const a=idx[t*3]*3,b=idx[t*3+1]*3,c=idx[t*3+2]*3;
+    const ux=pos[b]-pos[a],uy=pos[b+1]-pos[a+1],uz=pos[b+2]-pos[a+2],vx=pos[c]-pos[a],vy=pos[c+1]-pos[a+1],vz=pos[c+2]-pos[a+2];
+    let nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;const l=Math.hypot(nx,ny,nz)||1;nx/=l;ny/=l;nz/=l;
+    for(let k=0;k<3;k++){const s=[a,b,c][k],o=t*9+k*3;
+      P3[o]=pos[s];P3[o+1]=pos[s+1];P3[o+2]=pos[s+2];N3[o]=nx;N3[o+1]=ny;N3[o+2]=nz;}
+  }
+  // per-triangle display-face index for picking
+  const face=new Int32Array(nT);m.faces.forEach((f,i)=>{for(let t=f.first;t<f.first+f.count;t++)face[t]=i;});
+  return {pos:buf(P3),nor:buf(N3),nTri:nT,face,faces:m.faces};
+}
+
+function frame(b){
+  if(!b)return;const c=[0,1,2].map(i=>(b.min[i]+b.max[i])/2),r=Math.hypot(...[0,1,2].map(i=>b.max[i]-b.min[i]))/2||0.01;
+  st.target=c;st.dist=r/Math.tan(0.3)*0.8;
+}
+
+/* ---------------- selection geometry ---------------- */
+function prepFace(f){
+  const d={tris:[],lines:[],pts:[],chartLine:null,chartPts:null,ends:null};
+  for(const s of f.surfaces){
+    if(!s.pos)continue;
+    const mk=ext=>{const out=[];for(let t=0;t<s.ext.length;t++)if(!!s.ext[t]===ext)for(let k=0;k<3;k++){const i=s.tri[t*3+k]*3;out.push(s.pos[i],s.pos[i+1],s.pos[i+2]);}return out;};
+    for(const ext of [false,true]){const a=mk(ext);if(!a.length)continue;
+      const nor=new Float32Array(a.length);
+      for(let t=0;t<a.length;t+=9){const ux=a[t+3]-a[t],uy=a[t+4]-a[t+1],uz=a[t+5]-a[t+2],vx=a[t+6]-a[t],vy=a[t+7]-a[t+1],vz=a[t+8]-a[t+2];
+        let nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;const l=Math.hypot(nx,ny,nz)||1;for(let k=0;k<3;k++){nor[t+k*3]=nx/l;nor[t+k*3+1]=ny/l;nor[t+k*3+2]=nz/l;}}
+      d.tris.push({ext,pos:buf(new Float32Array(a)),nor:buf(nor),role:s.role});}
+  }
+  const segs=[];
+  for(const e of f.edges)if(e.line)for(let i=0;i+1<e.line.length;i++)segs.push(...e.line[i],...e.line[i+1]);
+  if(segs.length)d.lines.push({pos:buf(new Float32Array(segs)),kind:'edge'});
+  if(f.chart&&f.chart.length){
+    const seg=[];for(let i=0;i+1<f.chart.length;i++)seg.push(...f.chart[i],...f.chart[i+1]);
+    if(seg.length)d.lines.push({pos:buf(new Float32Array(seg)),kind:'chart'});
+    d.chartPts=buf(new Float32Array(f.chart.flat()));
+  }
+  if(f.vertices.length)d.pts=buf(new Float32Array(f.vertices.flatMap(v=>v.p)));
+  const ends=f.spine&&f.spine.ends?Object.values(f.spine.ends).flat():[];if(ends.length)d.ends=buf(new Float32Array(ends));
+  return d;
+}
+
+/* ---------------- draw ---------------- */
+let colors={};
+function readColors(){colors={bg:rgb(cssv('--viewport')),blue:rgb(cssv('--blue')),orange:rgb(cssv('--orange')),dot:rgb(cssv('--dot')),halo:rgb(cssv('--halo'))};
+  const dark=matchMedia('(prefers-color-scheme:dark)').matches;colors.mesh=dark?[.52,.55,.6]:[.62,.64,.68];colors.edge=dark?[.85,.88,.92]:[.1,.12,.15];}
+function resize(){const r=canvas.getBoundingClientRect(),d=devicePixelRatio||1;const w=Math.max(1,Math.round(r.width*d)),h=Math.max(1,Math.round(r.height*d));
+  if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}}
+function setM(p,M){gl.useProgram(p);gl.uniformMatrix4fv(p.u.M,false,M);}
+let queued=false;function draw(){if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;render();});}
+function render(){
+  if(!gl)return;resize();readColors();
+  gl.viewport(0,0,canvas.width,canvas.height);gl.clearColor(...colors.bg,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);
+  const cam=camera(),L=norm3([cam.eye[0]-st.target[0]+cam.up[0]*st.dist*.5,cam.eye[1]-st.target[1]+cam.up[1]*st.dist*.5,cam.eye[2]-st.target[2]+cam.up[2]*st.dist*.5]);
+  const mode=MODES[st.meshMode],mesh=st.mesh;
+  const drawMesh=(alpha)=>{
+    setM(P.tri,cam.M);gl.uniform3fv(P.tri.u.col,colors.mesh);gl.uniform1f(P.tri.u.alpha,alpha);gl.uniform3fv(P.tri.u.L,L);
+    attr(P.tri,'a',mesh.pos);attr(P.tri,'n',mesh.nor);gl.drawArrays(gl.TRIANGLES,0,mesh.nTri*3);
+  };
+  if(mesh&&mode==='shaded'){gl.enable(gl.POLYGON_OFFSET_FILL);gl.polygonOffset(2,2);drawMesh(1);gl.disable(gl.POLYGON_OFFSET_FILL);}
+  const d=st.selDraw;
+  if(d){
+    for(const t of d.tris){
+      if(t.ext&&!st.showExt)continue;
+      setM(P.tri,cam.M);gl.uniform3fv(P.tri.u.col,t.ext?colors.orange:colors.blue);gl.uniform1f(P.tri.u.alpha,1);gl.uniform3fv(P.tri.u.L,L);
+      attr(P.tri,'a',t.pos);attr(P.tri,'n',t.nor);gl.drawArrays(gl.TRIANGLES,0,t.pos.n);
+    }
+    if(st.showEdges)for(const l of d.lines){
+      if(l.kind==='edge'){setM(P.flat,cam.M);gl.uniform3fv(P.flat.u.col,colors.edge);}
+      else {setM(P.flat,cam.M);gl.uniform3fv(P.flat.u.col,[0,0,0]);}
+      gl.uniform1f(P.flat.u.alpha,1);attr(P.flat,'a',l.pos);if(l.kind==='chart')gl.disable(gl.DEPTH_TEST);gl.drawArrays(gl.LINES,0,l.pos.n);gl.enable(gl.DEPTH_TEST);
+    }
+    const pts=(b,col,size)=>{if(!b)return;gl.disable(gl.DEPTH_TEST);setM(P.pt,cam.M);gl.uniform3fv(P.pt.u.col,col);gl.uniform3fv(P.pt.u.halo,colors.halo);gl.uniform1f(P.pt.u.size,size*(devicePixelRatio||1));attr(P.pt,'a',b);gl.drawArrays(gl.POINTS,0,b.n);gl.enable(gl.DEPTH_TEST);};
+    pts(d.pts,colors.dot,9);pts(d.chartPts,[0,0,0],11);pts(d.ends,[0,0,0],11);
+  }
+  if(mesh&&mode==='translucent'){
+    gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
+    drawMesh(0.22);gl.depthMask(true);gl.disable(gl.BLEND);
+  }
+}
+function norm3(v){const l=Math.hypot(...v)||1;return v.map(x=>x/l);}
+
+/* ---------------- picking ---------------- */
+function pick(cx,cy){
+  const mesh=st.mesh;if(!mesh||st.meshMode===2)return -1;
+  resize();const cam=camera();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,canvas.width,canvas.height);
+  gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.enable(gl.DEPTH_TEST);
+  setM(P.id,cam.M);attr(P.id,'a',mesh.pos);
+  // one draw per display face, its index (+1) encoded in the colour
+  const faces=mesh.faces;
+  for(let i=0;i<faces.length;i++){const k=i+1;gl.uniform3f(P.id.u.col,(k&255)/255,((k>>8)&255)/255,((k>>16)&255)/255);gl.drawArrays(gl.TRIANGLES,faces[i].first*3,faces[i].count*3);}
+  const d=devicePixelRatio||1,px=new Uint8Array(4);
+  gl.readPixels(Math.round(cx*d),canvas.height-1-Math.round(cy*d),1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
+  draw();
+  const k=px[0]|(px[1]<<8)|(px[2]<<16);return k-1;
+}
+
+/* ---------------- interaction ---------------- */
+let drag=null;
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);drag={x:e.clientX,y:e.clientY,x0:e.clientX,y0:e.clientY,pan:e.shiftKey||e.button===2||e.button===1};canvas.style.cursor='grabbing';});
+canvas.addEventListener('pointermove',e=>{
+  if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;
+  if(drag.pan){const cam=camera(),s=2*Math.tan(0.3)*st.dist/canvas.clientHeight;
+    for(let i=0;i<3;i++)st.target[i]+=(-cam.right[i]*dx+cam.up[i]*dy)*s;}
+  else{st.yaw-=dx*0.007;st.pitch=Math.max(-1.55,Math.min(1.55,st.pitch+dy*0.007));}
+  draw();
+});
+canvas.addEventListener('pointerup',e=>{
+  canvas.style.cursor='grab';if(!drag)return;
+  const moved=Math.hypot(e.clientX-drag.x0,e.clientY-drag.y0)>4;drag=null;
+  if(!moved){const r=canvas.getBoundingClientRect(),i=pick(e.clientX-r.left,e.clientY-r.top);clickMesh(i);}
+});
+canvas.addEventListener('wheel',e=>{e.preventDefault();st.dist*=Math.exp(e.deltaY*0.0012);draw();},{passive:false});
+addEventListener('resize',draw);
+matchMedia('(prefers-color-scheme:dark)').addEventListener('change',draw);
+
+function clickMesh(i){
+  if(i<0||!st.mesh)return;
+  const f=st.mesh.faces[i];
+  if(f&&f.brep!==null&&f.brep!==undefined)select(f.brep,true);
+  else{$('msg').textContent='Display face '+i+' clicked: this file\'s display mesh has no B-rep face id for it, so nothing to select.';}
+}
+
+/* ---------------- UI ---------------- */
+function renderList(){
+  const q=$('search').value.trim().toLowerCase(),L=$('list');
+  const rows=st.faces.filter(f=>!q||String(f.id).includes(q)||f.type.includes(q)||String(f.node).includes(q));
+  const MAX=1500;
+  L.innerHTML=rows.slice(0,MAX).map(f=>`<div data-id="${f.id}" class="${f.id===st.sel?'on':''}"><span>${f.id}</span><span class="t">${esc(f.type)}</span></div>`).join('');
+  $('listnote').textContent=rows.length+' of '+st.faces.length+' faces'+(rows.length>MAX?' (first '+MAX+' shown)':'');
+}
+$('search').addEventListener('input',renderList);
+$('list').addEventListener('click',e=>{const d=e.target.closest('div[data-id]');if(d)select(Number(d.dataset.id),true);});
+
+async function select(id,fit){
+  st.sel=id;renderList();
+  const row=$('list').querySelector('.on');if(row)row.scrollIntoView({block:'nearest'});
+  $('info').innerHTML='<p class="s">Loading face '+id+'&hellip;</p>';
+  try{
+    let f=st.cache.get(id);if(!f){f=await jget('/api/face/'+id);st.cache.set(id,f);}
+    if(st.sel!==id)return;
+    st.face=f;st.selDraw=prepFace(f);
+    if(st.mesh&&st.meshMode===0&&!autoTrans){st.meshMode=1;autoTrans=true;syncBar();}
+    if(fit)frame(f.bounds);
+    showInfo(f);draw();
+  }catch(e){$('info').innerHTML='<p class="s warn">'+esc(e.message)+'</p>';}
+}
+
+function showInfo(f){
+  const rows=[['type',f.type],['face id',f.id],['node',f.node],['same sense',f.sameSense],['loops / edges / vertices',f.counts.loops+' / '+f.counts.edges+' / '+f.counts.vertices]];
+  let h='<h2>Face</h2><dl>'+rows.map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')+'</dl>';
+  if(f.blend){
+    h+='<h2>Blend</h2><dl><dt>kind</dt><dd>'+esc(f.blend.blendType)+'</dd><dt>radius range</dt><dd>'+esc((f.blend.range||[]).map(fmt).join(', '))+'</dd>'+
+      f.blend.supports.map((s,i)=>`<dt>support ${i+1}</dt><dd>${esc(s.type)} node ${esc(s.node)}${s.offset!==undefined?' (offset '+fmt(s.offset)+')':''}</dd>`).join('')+'</dl>';
+  }
+  if(f.spine){
+    h+='<h2>Spine</h2><dl><dt>type</dt><dd>'+esc(f.spine.type)+' (node '+esc(f.spine.node)+')</dd><dt>chart points</dt><dd>'+f.spine.chartPoints+'</dd>'+
+      (f.spine.chordalError!==null?'<dt>chordal error</dt><dd>'+fmt(f.spine.chordalError)+'</dd>':'')+
+      Object.entries(f.spine.ends).map(([k,p])=>`<dt>${k}</dt><dd>${p.map(fmt).join(', ')}</dd>`).join('')+'</dl>';
+  }
+  for(const s of f.surfaces){
+    h+='<h2>'+esc(s.role)+'</h2><dl><dt>type</dt><dd>'+esc(s.type)+' (node '+esc(s.node)+')</dd>';
+    if(s.offset!==undefined)h+='<dt>offset</dt><dd>'+fmt(s.offset)+'</dd>';
+    if(s.range)h+='<dt>u range</dt><dd>'+s.range.u.map(fmt).join(' &hellip; ')+'</dd><dt>v range</dt><dd>'+s.range.v.map(fmt).join(' &hellip; ')+'</dd>';
+    if(s.pos)h+='<dt>drawn</dt><dd>'+s.storedTriangles+' stored'+(s.extension?', '+s.extensionTriangles+' extension':'')+' triangles</dd>';
+    h+='</dl>';
+    if(s.rangeNote)h+='<p class="s">'+esc(s.rangeNote)+'</p>';
+    if(s.extensionNote)h+='<p class="s">'+esc(s.extensionNote)+'</p>';
+    if(s.error)h+='<p class="s warn">Not drawn: '+esc(s.error)+'</p>';
+  }
+  h+='<h2>Legend</h2><ul style="list-style:none;padding:0">'+
+   `<li><span class="sw" style="background:var(--blue)"></span>stored patch (inside the stored range)</li>`+
+   `<li><span class="sw" style="background:var(--orange)"></span>extension (evaluated past the range)</li>`+
+   `<li><span class="sw dot" style="background:var(--dot)"></span>vertices</li>`+
+   `<li><span class="sw dot" style="background:#000;box-shadow:0 0 0 1px var(--halo)"></span>chart points / spine ends, joined by a black line</li></ul>`;
+  if(f.notes.length||f.notEvaluable.length){
+    h+='<h2>Could not be evaluated</h2><ul>'+f.notEvaluable.map(x=>'<li class="warn">'+esc(x)+'</li>').join('')+'</ul>';
+    if(f.notes.length)h+=f.notes.map(x=>'<p class="s">'+esc(x)+'</p>').join('');
+  }else h+='<p class="s">Everything on this face was evaluated.</p>';
+  $('info').innerHTML=h;
+}
+
+function syncBar(){
+  $('bMesh').textContent='Mesh: '+MODES[st.meshMode];$('bMesh').setAttribute('aria-pressed',st.meshMode!==2);
+  $('bExt').setAttribute('aria-pressed',st.showExt);$('bEdges').setAttribute('aria-pressed',st.showEdges);
+}
+$('bMesh').onclick=()=>{st.meshMode=(st.meshMode+1)%3;autoTrans=true;syncBar();draw();};
+$('bExt').onclick=()=>{st.showExt=!st.showExt;syncBar();draw();};
+$('bEdges').onclick=()=>{st.showEdges=!st.showEdges;syncBar();draw();};
+$('bFit').onclick=()=>{if(st.face)frame(st.face.bounds);draw();};
+$('bHome').onclick=()=>{if(st.home){st.target=st.home.t.slice();st.dist=st.home.d;}draw();};
+
+async function init(){
+  if(!gl){$('msg').textContent='WebGL is not available in this browser.';}
+  const s=await jget('/api/summary');st.summary=s;st.faces=s.faces.slice().sort((a,b)=>a.id-b.id);
+  $('file').textContent=s.file;
+  $('counts').textContent=s.counts.faces+' faces, '+s.counts.edges+' edges, '+s.counts.vertices+' vertices · '+Object.entries(s.counts.surfaceTypes).map(([k,v])=>k+' '+v).join(', ');
+  renderList();syncBar();
+  $('info').innerHTML='<p class="s">Select a face from the list'+'.</p>';
+  try{
+    const m=await jget('/api/mesh');st.meshInfo=m;st.mesh=gl&&buildMesh(m);
+    frame(m.bounds);st.home={t:st.target.slice(),d:st.dist};
+    $('msg').textContent='Display mesh: '+m.displayFaces+' faces, '+m.triangles+' triangles. '+m.mapping.note+'.';
+  }catch(e){$('msg').textContent='Display mesh not available: '+e.message;}
+  const q=new URLSearchParams(location.search).get('face');if(q)select(Number(q),true);
+  draw();
+}
+init().catch(e=>{$('msg').textContent=e.message;});
+</script>
+</body>
+</html>

@@ -40,6 +40,20 @@ If the converter can't hit the tolerance on a face, it stops with an error inste
 
 Files over the built-in section size limit get refused. If you trust the file, `--allow-large-sections` on `info`, `brep` or `convert` lets it through.
 
+## Inspect the B-rep
+
+```bash
+sldprt inspect part.SLDPRT [--port 8081] [--host 127.0.0.1] [--open]
+```
+
+Starts a local page for checking geometry against the exact B-rep. Pick a face from the list (search by id or type) and it's drawn over the display mesh: the stored surface patch in blue, and for B-splines and offsets of B-splines a band past the stored range in orange. Vertices are dots. For a blend face you get its spine's surfaces, the stored chart points joined by a black line, and the spine's start and end. Orbit, pan and zoom with the mouse; the mesh can be shaded, translucent or hidden.
+
+It does no surface fitting, so anything it can't evaluate (blend surfaces themselves, some intersection curves) is skipped and listed under "Could not be evaluated". Clicking the mesh selects a B-rep face only when the file's display faces carry B-rep face ids (modern files do, the SW2011 ones don't); the page says which. Needs only Node, and nothing leaves your machine.
+
+## Optional setup
+
+`npm run setup` asks "Do you want the full validation suite? (y/N)". Yes runs `python3 -m pip install --user cadquery-ocp`, which `tools/validate.js` and `tools/validate-step.py` use to re-open our STEP output in OpenCascade. No changes nothing. It never runs on `npm install`, and the converter and `sldprt inspect` don't need it.
+
 ## From code
 
 ```js
