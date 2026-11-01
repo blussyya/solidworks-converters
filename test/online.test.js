@@ -71,7 +71,7 @@ test('DisplayLists without tessellation and cosmetic threads',needsOnline,()=>{
 
 test('every online part: the B-rep reads with no graph failures',needsOnline,t=>{
   let n=0;const bad=[];
-  for(const y of years())for(const f of fs.readdirSync(path.join(ROOT,y))){
+  for(const y of years())for(const f of fs.readdirSync(path.join(ROOT,y)).filter(f=>/\.sldprt$/i.test(f))){
     const r=S.info(fs.readFileSync(path.join(ROOT,y,f)));n++;
     if(r.brepError||r.brep.error||r.brep.graphErrors)bad.push(`${y}/${f}: ${r.brepError||r.brep.error||r.brep.graphErrors+' graph errors'}`);
   }
