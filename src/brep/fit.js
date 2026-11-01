@@ -68,17 +68,22 @@ function fitPoints(fn,ss,tol,opts){
   // fn may give null where it has no point of this curve (polyFn near a T limit): that sample is
   // counted in offBranch, not fitted, and not pinned
   let curve,error=Infinity,offBranch=0;
-  for(let round=0;round<16;round++){
+  // the cheap check samples each interval at 3 points; once it passes, one dense pass at 9 points
+  // per interval confirms it, since an error can sit between the cheap samples (EXP-087)
+  const CHEAP=[0.5,0.25,0.75],DENSE=[0.1,0.2,0.3,0.4,0.6,0.7,0.8,0.9];
+  let dense=false;
+  for(let round=0;round<24;round++){
     const t=chordParams(pts);offBranch=0;
     curve={type:'bspline',...interp(pts,t,3),weights:null,closed:false};
     const bad=[];error=0;
     for(let i=0;i<s.length-1;i++){
       let e=0;
-      for(const f of [0.5,0.25,0.75]){const q=fn(s[i]+(s[i+1]-s[i])*f);if(!q){offBranch++;continue;}
+      for(const f of dense?CHEAP.concat(DENSE):CHEAP){const q=fn(s[i]+(s[i+1]-s[i])*f);if(!q){offBranch++;continue;}
         const u=nearestParam(curve,q,t[i]+(t[i+1]-t[i])*f);e=Math.max(e,dist(q,G.bsplineCurve(curve,u).p));}
       error=Math.max(error,e);if(e>tol)bad.push(i);
     }
-    if(!bad.length||s.length>20000)break;
+    if(s.length>20000)break;
+    if(!bad.length){if(dense)break;dense=true;continue;}
     const ns=[],np=[];
     for(let i=0;i<s.length;i++){ns.push(s[i]);np.push(pts[i]);if(bad.includes(i)){const m=(s[i]+s[i+1])/2,q=fn(m);if(q){ns.push(m);np.push(q);}}}
     s=ns;pts=np;
