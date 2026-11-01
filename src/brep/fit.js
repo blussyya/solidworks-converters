@@ -212,7 +212,13 @@ function chartPoly(S1,S2,A,B,chart){
 /* Exact point at fraction s of a polyline of exact points: Newton in the plane normal to the chord. */
 function polyFn(S1,S2,poly){
   const L=[0];for(let i=1;i<poly.length;i++)L.push(L[i-1]+dist(poly[i],poly[i-1]));const tot=L[L.length-1];
-  let cache=new Map(),last=-9;
+  // Each call seeds the corrector from the feet at its segment's start vertex. The feet are found
+  // once, in order along the polyline, each seeded from the one before, so a point never depends
+  // on which call came before it. Seeded from the last call instead, a call far along the polyline
+  // (a fit check going back to the start) starts from feet a whole thread turn away and can land
+  // on another turn (3e-3 m off on db8a97e2, EXP-087).
+  const feet=[];let run=new Map();
+  const seed=i=>{while(feet.length<=i){const P=poly[feet.length];footOn(S1,P,run);footOn(S2,P,run);feet.push(new Map(run));}return new Map(feet[i]);};
   // the ends where the surfaces (nearly) touch: a T limit, normals within 1e-3 rad
   const touch=[0,poly.length-1].filter(i=>{try{const a=footOn(S1,poly[i],new Map()),b=footOn(S2,poly[i],new Map());return norm(cross(a.n,b.n))<1e-3;}catch(e){return false;}}).map(i=>poly[i]);
   return {ss:L.map(x=>x/tot),fn:s=>{
@@ -224,11 +230,7 @@ function polyFn(S1,S2,poly){
     // crosses there (head_back blend 9931's spine: 1.5e-7 m to the side, 60 pm from the end), and a
     // fit pinned to such points loops out ~1 µm. No point is given then. (Only at a touching end: on
     // 5f8e9db3's tight spring coils a chord is enough shorter than its arc to fail the test.)
-    // The corrector seeds its feet from the last call. A call far along the polyline from the last
-    // one (a fit check going back to the start) would start from feet a whole thread turn away and
-    // can land on another turn (3e-3 m off on db8a97e2), so it starts from this segment's own point.
-    if(Math.abs(i-last)>1){cache=new Map();footOn(S1,a,cache);footOn(S2,a,cache);}last=i;
-    const g=add(a,mul(sub(b,a),f)),X=corrector(S1,S2,g,unit(sub(b,a)),cache);
+    const g=add(a,mul(sub(b,a),f)),X=corrector(S1,S2,g,unit(sub(b,a)),seed(i-1));
     for(const P of [a,b])if(touch.includes(P)&&dist(X,P)>2*dist(g,P)+1e-12)return null;
     return X;}};
 }
