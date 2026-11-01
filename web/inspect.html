@@ -50,6 +50,8 @@ ul{margin:0;padding-left:18px;font-size:13px}
 .sw.dot{border-radius:50%}
 .warn{color:var(--orange)}
 p.s{margin:4px 0;font-size:13px}
+  .note{background:var(--notebg,#fff4d6);color:inherit;border-left:3px solid var(--orange);padding:8px 10px;margin:0 0 12px;font-size:13px;line-height:1.4}
+  @media (prefers-color-scheme:dark){.note{--notebg:#3a2f12}}
 </style>
 </head>
 <body>
@@ -291,7 +293,11 @@ async function select(id,fit){
 
 function showInfo(f){
   const rows=[['type',f.type],['face id',f.id],['node',f.node],['same sense',f.sameSense],['loops / edges / vertices',f.counts.loops+' / '+f.counts.edges+' / '+f.counts.vertices]];
-  let h='<h2>Face</h2><dl>'+rows.map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')+'</dl>';
+  let h='';
+  // Say up front what's on screen, so nobody takes a construction surface for the part.
+  if(f.blend&&f.surfaces.some(s=>/spine/i.test(s.role)))h+='<p class="note"><b>You are not looking at the part.</b> A fillet (blend) face is stored as a recipe, not a shape, so it isn\'t drawn. The coloured sheets are the two surfaces its spine runs between: construction surfaces, set off from the model by the fillet radius. They are never part of the solid. The grey mesh is the part.</p>';
+  else if(f.surfaces.length)h+='<p class="note">Coloured: this face\'s underlying surface, drawn over its whole stored range (blue), not trimmed to the face\'s edges. Grey: the part\'s display mesh.</p>';
+  h+='<h2>Face</h2><dl>'+rows.map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')+'</dl>';
   if(f.blend){
     h+='<h2>Blend</h2><dl><dt>kind</dt><dd>'+esc(f.blend.blendType)+'</dd><dt>radius range</dt><dd>'+esc((f.blend.range||[]).map(fmt).join(', '))+'</dd>'+
       f.blend.supports.map((s,i)=>`<dt>support ${i+1}</dt><dd>${esc(s.type)} node ${esc(s.node)}${s.offset!==undefined?' (offset '+fmt(s.offset)+')':''}</dd>`).join('')+'</dl>';
@@ -312,8 +318,9 @@ function showInfo(f){
     if(s.error)h+='<p class="s warn">Not drawn: '+esc(s.error)+'</p>';
   }
   h+='<h2>Legend</h2><ul style="list-style:none;padding:0">'+
-   `<li><span class="sw" style="background:var(--blue)"></span>stored patch (inside the stored range)</li>`+
-   `<li><span class="sw" style="background:var(--orange)"></span>extension (evaluated past the range)</li>`+
+   `<li><span class="sw" style="background:var(--blue)"></span>stored patch: the surface inside the parameter range stored in the file (untrimmed, so it can reach past the face)</li>`+
+   `<li><span class="sw" style="background:var(--orange)"></span>extension: the same surface carried on past that range. A B-spline continues flat along its edge tangent there (Parasolid's rule, EXP-086). Geometry stored in the file can sit out here, e.g. a fillet's spine end</li>`+
+   `<li><span class="sw" style="background:#9aa0a6"></span>grey: the part's display mesh, as SolidWorks saved it</li>`+
    `<li><span class="sw dot" style="background:var(--dot)"></span>vertices</li>`+
    `<li><span class="sw dot" style="background:#000;box-shadow:0 0 0 1px var(--halo)"></span>chart points / spine ends, joined by a black line</li></ul>`;
   if(f.notes.length||f.notEvaluable.length){
