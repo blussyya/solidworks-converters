@@ -68,22 +68,26 @@ function fitPoints(fn,ss,tol,opts){
   // fn may give null where it has no point of this curve (polyFn near a T limit): that sample is
   // counted in offBranch, not fitted, and not pinned
   let curve,error=Infinity,offBranch=0;
-  // the cheap check samples each interval at 3 points; once it passes, one dense pass at 9 points
-  // per interval confirms it, since an error can sit between the cheap samples (EXP-087)
+  // The cheap check samples each interval at 3 points. Once it passes, a dense pass checks 8 more
+  // points per interval on the same curve, since an error can sit between the cheap samples (edge
+  // 826 on 82981f2a, 1.12e-8 m unseen at 9.7e-9, EXP-087). If the dense pass finds a bad interval,
+  // it's split and the cheap rounds carry on until they pass again, then another dense pass.
   const CHEAP=[0.5,0.25,0.75],DENSE=[0.1,0.2,0.3,0.4,0.6,0.7,0.8,0.9];
-  let dense=false;
+  let dense=false,cheapErr=0;
   for(let round=0;round<24;round++){
-    const t=chordParams(pts);offBranch=0;
-    curve={type:'bspline',...interp(pts,t,3),weights:null,closed:false};
+    const t=chordParams(pts);if(!dense)offBranch=0;
+    if(!dense)curve={type:'bspline',...interp(pts,t,3),weights:null,closed:false};
     const bad=[];error=0;
     for(let i=0;i<s.length-1;i++){
       let e=0;
-      for(const f of dense?CHEAP.concat(DENSE):CHEAP){const q=fn(s[i]+(s[i+1]-s[i])*f);if(!q){offBranch++;continue;}
+      for(const f of dense?DENSE:CHEAP){const q=fn(s[i]+(s[i+1]-s[i])*f);if(!q){offBranch++;continue;}
         const u=nearestParam(curve,q,t[i]+(t[i+1]-t[i])*f);e=Math.max(e,dist(q,G.bsplineCurve(curve,u).p));}
       error=Math.max(error,e);if(e>tol)bad.push(i);
     }
+    if(dense)error=Math.max(error,cheapErr);else cheapErr=error;
     if(s.length>20000)break;
     if(!bad.length){if(dense)break;dense=true;continue;}
+    dense=false;
     const ns=[],np=[];
     for(let i=0;i<s.length;i++){ns.push(s[i]);np.push(pts[i]);if(bad.includes(i)){const m=(s[i]+s[i+1])/2,q=fn(m);if(q){ns.push(m);np.push(q);}}}
     s=ns;pts=np;
@@ -208,7 +212,7 @@ function chartPoly(S1,S2,A,B,chart){
 /* Exact point at fraction s of a polyline of exact points: Newton in the plane normal to the chord. */
 function polyFn(S1,S2,poly){
   const L=[0];for(let i=1;i<poly.length;i++)L.push(L[i-1]+dist(poly[i],poly[i-1]));const tot=L[L.length-1];
-  const cache=new Map();
+  let cache=new Map(),last=-9;
   // the ends where the surfaces (nearly) touch: a T limit, normals within 1e-3 rad
   const touch=[0,poly.length-1].filter(i=>{try{const a=footOn(S1,poly[i],new Map()),b=footOn(S2,poly[i],new Map());return norm(cross(a.n,b.n))<1e-3;}catch(e){return false;}}).map(i=>poly[i]);
   return {ss:L.map(x=>x/tot),fn:s=>{
@@ -220,6 +224,10 @@ function polyFn(S1,S2,poly){
     // crosses there (head_back blend 9931's spine: 1.5e-7 m to the side, 60 pm from the end), and a
     // fit pinned to such points loops out ~1 µm. No point is given then. (Only at a touching end: on
     // 5f8e9db3's tight spring coils a chord is enough shorter than its arc to fail the test.)
+    // The corrector seeds its feet from the last call. A call far along the polyline from the last
+    // one (a fit check going back to the start) would start from feet a whole thread turn away and
+    // can land on another turn (3e-3 m off on db8a97e2), so it starts from this segment's own point.
+    if(Math.abs(i-last)>1){cache=new Map();footOn(S1,a,cache);footOn(S2,a,cache);}last=i;
     const g=add(a,mul(sub(b,a),f)),X=corrector(S1,S2,g,unit(sub(b,a)),cache);
     for(const P of [a,b])if(touch.includes(P)&&dist(X,P)>2*dist(g,P)+1e-12)return null;
     return X;}};
