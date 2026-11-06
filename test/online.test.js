@@ -46,6 +46,19 @@ test('the configuration active at save time is the one read',needsOnline,()=>{
   }
 });
 
+test('without ModelHeaders the display picks the configuration (EXP-098)',needsOnline,()=>{
+  // the lowest ID was 56 mm off in 118a3cb0 and 0.1 mm off in 289756ce
+  for(const [sha,id,matches] of [['118a3cb0',268,[268]],['289756ce',21,[21]],['629adcec',0,[0,1,4]]]){
+    const c=P.readBody(part(sha)).configuration;
+    assert.equal(c.by,'display',sha);
+    assert.equal(+/Config-(\d+)-Partition$/.exec(c.name)[1],id,sha);
+    assert.deepEqual(c.matches.map(m=>+/Config-(\d+)-/.exec(m)[1]),matches,sha);
+  }
+  // 300f9732: the display pads the faces at four tolerant vertices by 2.5e-8 m, so nothing
+  // matches and the lowest ID stays (the only one with the display's 92 faces)
+  assert.equal(P.readBody(part('300f9732')).configuration.by,'lowest');
+});
+
 test('LocalBodies are added unless SolidWorks marks them used up',needsOnline,()=>{
   const r=P.readBody(part('2e6e140a'));
   assert.equal(r.kind,'partition + local');assert.equal(r.parsed.sections,9);
