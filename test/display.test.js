@@ -150,3 +150,15 @@ test('legacy SW2011 mesh boxes equal the geometry-matched 2022 models',needsCorp
   }
   assert.equal(n,22);t.diagnostic(`${n} geometry-matched models, boxes equal within 2e-5 m`);
 });
+
+// EXP-099: some records have no id/tag block, and reading one there gave tags like 4980815
+// (UTF-16 "OL" from "SOLIDWORKS"). Those faces keep their mesh but get no metadata.
+test('records without an id block get no metadata',{skip:CORPUS&&fs.existsSync(path.join(CORPUS,'test files online'))?false:'no "test files online" in the corpus'},()=>{
+  const find=id=>{const out=[];const walk=d=>{for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);if(e.isDirectory())walk(p);else if(e.name.startsWith(id)&&/\.sldprt$/i.test(e.name))out.push(p);}};walk(path.join(CORPUS,'test files online'));return out[0];};
+  for(const [id,faces] of [['0739c559',342],['7765d286',62],['eefa906d',6]]){
+    const f=find(id);if(!f)continue;
+    const d=require('../src').parse(f);
+    assert.equal(d.faces.length,faces,id);
+    assert.equal(d.faces.filter(x=>x.metadata).length,0,id);
+  }
+});
