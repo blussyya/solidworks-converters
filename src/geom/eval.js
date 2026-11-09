@@ -213,7 +213,14 @@ function surfaceInverse(s,p,near){
     case 'sphere':{const q=sub(p,s.c),y=cross(s.a,s.x),h=dot(q,s.a),rho=Math.hypot(dot(q,s.x),dot(q,y));return {u:Math.atan2(dot(q,y),dot(q,s.x)),v:Math.atan2(h,rho)};}
     case 'torus':{const q=sub(p,s.c),y=cross(s.a,s.x),u=Math.atan2(dot(q,y),dot(q,s.x)),r=add(mul(s.x,Math.cos(u)),mul(y,Math.sin(u))),w=sub(q,mul(r,s.R));
       return {u,v:Math.atan2(dot(w,s.a),dot(w,r))};}
-    case 'bspline':{if(near){const r=bsplineNewton(s,p,near.u,near.v);if(r)return r;}const r=bsplineProject(s,p);return {u:r.u,v:r.v};}
+    // A foot clamped to the knot range is the foot on the surface's tangent extension only to first
+    // order: the extension ruled along an edge is not a plane, so the distance to the clamped foot's
+    // tangent plane is wrong by more than 1e-8 m a few parameter units out (EXP-103). Follow it on
+    // without the clamp, as for an offset below.
+    case 'bspline':{let r=near?bsplineNewton(s,p,near.u,near.v):null;if(!r){const x=bsplineProject(s,p);r={u:x.u,v:x.v};}
+      const [[u0,u1],[v0,v1]]=surfaceRange(s);
+      if((!wrapsU(s)&&(r.u<=u0||r.u>=u1))||(!wrapsV(s)&&(r.v<=v0||r.v>=v1)))return bsplineNewton(s,p,r.u,r.v,true)||r;
+      return r;}
     // the nearest point on an offset and on its basis lie on one normal line: same (u, v)
     case 'offset':{
       // an offset can reach past its basis's edge, where the basis carries on along its tangent:
