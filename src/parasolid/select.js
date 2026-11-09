@@ -107,11 +107,19 @@ function meshResidual(d,m){
     }
   }
   const used=edges.map((r,i)=>r.length?i:-1).filter(i=>i>=0);
-  // Is there an assignment using only edges that pass ok? (Kuhn's augmenting paths.)
+  // Is there an assignment using only edges that pass ok? Augmenting paths found breadth-first,
+  // without recursion: the recursive form overflowed the stack near 10,000 faces (EXP-106).
   const assign=ok=>{const owner=new Map();
-    const tryF=(i,seen)=>{for(const e of edges[i]){if(!ok(e)||seen.has(e.bi))continue;seen.add(e.bi);
-      if(!owner.has(e.bi)||tryF(owner.get(e.bi),seen)){owner.set(e.bi,i);return true;}}return false;};
-    return used.every(i=>tryF(i,new Set()));};
+    for(const start of used){
+      const from=new Map([[start,null]]),queue=[start];let end=null;
+      for(let q=0;q<queue.length&&end===null;q++){const i=queue[q];
+        for(const e of edges[i]){if(!ok(e)||from.has('b'+e.bi))continue;from.set('b'+e.bi,i);
+          if(!owner.has(e.bi)){end=e.bi;break;}
+          const j=owner.get(e.bi);if(!from.has(j)){from.set(j,'b'+e.bi);queue.push(j);}}}
+      if(end===null)return false;
+      for(let b=end;b!==null;){const i=from.get('b'+b);const prev=from.get(i);owner.set(b,i);b=prev===null?null:Number(prev.slice(1));}
+    }
+    return true;};
   // smallest worst distance any assignment reaches, then the smallest worst angle within it
   const lowest=(vals,ok)=>{vals=[...new Set(vals)].sort((x,y)=>x-y);let lo=0,hi=vals.length-1;
     if(hi<0||!ok(vals[hi]))return Infinity;
