@@ -76,13 +76,27 @@ function bsplineSurface(s,u,v){
   const uc=wrapsU(s)?u:Math.min(u1,Math.max(u0,u)),vc=wrapsV(s)?v:Math.min(v1,Math.max(v0,v));
   if(uc===u&&vc===v)return bsplineCore(s,u,v);
   const e=bsplineCore(s,uc,vc),a=u-uc,b=v-vc;
-  // the cross derivative turns the edge's own tangent as the extension leaves it
+  // the cross derivative turns the edge's own tangent as the extension leaves it. It is the exact
+  // mixed derivative at the edge: a differenced one carries ~1e-11 relative noise, which times a
+  // distance of tens of parameter units keeps a foot far out in the extension from settling to
+  // 1e-14 m, and the foot finder then fell back to the clamped foot (EXP-103).
   let du=e.du,dv=e.dv;
-  if(b&&!a){const h=1e-6*(u1-u0),U1=bsplineCore(s,Math.min(u1,uc+h),vc),U0=bsplineCore(s,Math.max(u0,uc-h),vc);
-    du=add(e.du,mul(sub(U1.dv,U0.dv),b/(Math.min(u1,uc+h)-Math.max(u0,uc-h))));}
-  if(a&&!b){const h=1e-6*(v1-v0),V1=bsplineCore(s,uc,Math.min(v1,vc+h)),V0=bsplineCore(s,uc,Math.max(v0,vc-h));
-    dv=add(e.dv,mul(sub(V1.du,V0.du),a/(Math.min(v1,vc+h)-Math.max(v0,vc-h))));}
+  if(b&&!a)du=add(e.du,mul(bsplineMixed(s,uc,vc),b));
+  if(a&&!b)dv=add(e.dv,mul(bsplineMixed(s,uc,vc),a));
   return {p:add(e.p,add(mul(e.du,a),mul(e.dv,b))),du,dv};
+}
+/* d²S/du dv inside the knot range (at its edge: the limit from inside). Rational surfaces by the
+ * quotient rule on S = P / W. */
+function bsplineMixed(s,u,v){
+  const nu=s.ctrl.length,nv=s.ctrl[0].length,ku=span(s.ku,s.du,nu,u),kv=span(s.kv,s.dv,nv,v);
+  const bu=basis(s.ku,s.du,ku,u),bv=basis(s.kv,s.dv,kv,v);
+  let P=[0,0,0],Pu=[0,0,0],Pv=[0,0,0],Puv=[0,0,0],W=0,Wu=0,Wv=0,Wuv=0;
+  for(let a=0;a<=s.du;a++)for(let b=0;b<=s.dv;b++){
+    const i=ku-s.du+a,j=kv-s.dv+b,w=s.weights?s.weights[i][j]:1,q=s.ctrl[i][j];
+    const f=bu.B[a]*bv.B[b]*w,fu=bu.D[a]*bv.B[b]*w,fv=bu.B[a]*bv.D[b]*w,fuv=bu.D[a]*bv.D[b]*w;
+    P=add(P,mul(q,f));Pu=add(Pu,mul(q,fu));Pv=add(Pv,mul(q,fv));Puv=add(Puv,mul(q,fuv));W+=f;Wu+=fu;Wv+=fv;Wuv+=fuv;}
+  const p=mul(P,1/W),su=mul(sub(Pu,mul(p,Wu)),1/W),sv=mul(sub(Pv,mul(p,Wv)),1/W);
+  return mul(sub(sub(sub(Puv,mul(su,Wv)),mul(sv,Wu)),mul(p,Wuv)),1/W);
 }
 function bsplineCore(s,u,v){
   const nu=s.ctrl.length,nv=s.ctrl[0].length,ku=span(s.ku,s.du,nu,u),kv=span(s.kv,s.dv,nv,v);
@@ -165,7 +179,13 @@ function surfaceEval(s,u,v){
     case 'torus':{const y=cross(s.a,s.x),c=Math.cos(u),sn=Math.sin(u),r=add(mul(s.x,c),mul(y,sn)),cv=Math.cos(v),sv=Math.sin(v),rho=s.R+s.r*cv;
       return {p:add(s.c,add(mul(r,rho),mul(s.a,s.r*sv))),du:mul(add(mul(s.x,-sn),mul(y,c)),rho),dv:add(mul(r,-s.r*sv),mul(s.a,s.r*cv))};}
     case 'bspline':return bsplineSurface(s,u,v);
-    case 'swept':{const e=s.curve.type==='bspline'?bsplineCurve(s.curve,u):{p:curvePoint(s.curve,u),d:curveTangent(s.curve,u)};
+    // Past the end of a B-spline section curve the surface carries on along the curve's end tangent,
+    // as a B-spline surface does past its edge. The polynomial continuation is 4.5e-5 m off the
+    // chart points of head_back's blend 3416 spine, the straight one 8e-17 m (EXP-103).
+    case 'swept':{let e;
+      if(s.curve.type==='bspline'){const [a,b]=curveRange(s.curve),uc=Math.min(b,Math.max(a,u));e=bsplineCurve(s.curve,uc);
+        if(uc!==u)e={p:add(e.p,mul(e.d,u-uc)),d:e.d};}
+      else e={p:curvePoint(s.curve,u),d:curveTangent(s.curve,u)};
       return {p:add(e.p,mul(s.d,v)),du:e.d,dv:s.d};}
     case 'spun':{const q=sub(curvePoint(s.curve,v),s.c),dq=curveTangent(s.curve,v),p=add(s.c,rotate(q,s.a,u));
       return {p,du:cross(s.a,sub(p,s.c)),dv:rotate(dq,s.a,u)};}
@@ -225,7 +245,8 @@ function genericInverse(s,p,near){
     const c0=sub(curvePoint(s.curve,v),s.c),r0=unit(sub(c0,mul(s.a,dot(c0,s.a)))),r1=unit(sub(q,mul(s.a,along)));u=Math.atan2(dot(cross(r0,r1),s.a),dot(r0,r1));
   }else if(s.type==='offset'){const r=surfaceInverse(s.basis,p);u=r.u;v=r.v;}
   else throw Error('surfaceInverse: '+s.type);
-  const R=surfaceRange(s);
+  // a swept B-spline curve continues straight past its ends (surfaceEval), so its foot may too
+  const R=s.type==='swept'&&s.curve.type==='bspline'?null:surfaceRange(s);
   for(let it=0;it<60;it++){
     const e=surfaceEval(s,u,v),r=sub(p,e.p),a=dot(e.du,e.du),b=dot(e.du,e.dv),c=dot(e.dv,e.dv),det=a*c-b*b;if(!det)break;
     const x=dot(r,e.du),y=dot(r,e.dv);let nu=u+(c*x-b*y)/det,nv=v+(a*y-b*x)/det;

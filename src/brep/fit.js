@@ -118,9 +118,10 @@ function footOn(s,p,cache){
 }
 /* Point on S1 ∩ S2 in the plane through g normal to T (Newton on the three equations). */
 function corrector(S1,S2,g,T,cache){
-  let X=g,lm=false;
+  let X=g,lm=false,step=Infinity,miss=Infinity,off=0;
   for(let it=0;it<(lm?400:40);it++){
     const a=footOn(S1,X,cache),b=footOn(S2,X,cache);
+    off=Math.max(footOff(a,X),footOff(b,X));
     const F=[a.d,b.d,dot(sub(X,g),T)];
     const M=[a.n,b.n,T],det=dot(M[0],cross(M[1],M[2]));
     // Where the surfaces touch (a blend that runs out tangentially) the normals are parallel and
@@ -139,13 +140,24 @@ function corrector(S1,S2,g,T,cache){
     // Δ = -M^{-1} F, rows of M are the gradients
     const c0=cross(M[1],M[2]),c1=cross(M[2],M[0]),c2=cross(M[0],M[1]);
     const D=mul(add(add(mul(c0,F[0]),mul(c1,F[1])),mul(c2,F[2])),-1/det);
-    X=add(X,D);
-    if(norm(D)<1e-16+1e-15*norm(X))break;
+    X=add(X,D);step=norm(D);miss=Math.max(Math.abs(a.d),Math.abs(b.d));
+    if(step<1e-16+1e-15*norm(X))break;
   }
   if(lm){const a=footOn(S1,X,cache),b=footOn(S2,X,cache);
-    if(Math.max(Math.abs(a.d),Math.abs(b.d))>1e-8)throw Error('intersection: surfaces tangent, no common point ('+Math.max(Math.abs(a.d),Math.abs(b.d)).toExponential(1)+' m)');}
+    if(Math.max(Math.abs(a.d),Math.abs(b.d))>1e-8)throw Error('intersection: surfaces tangent, no common point ('+Math.max(Math.abs(a.d),Math.abs(b.d)).toExponential(1)+' m)');
+    off=Math.max(footOff(a,X),footOff(b,X));}
+  // Newton can stop moving on a wrong foot: a foot clamped at a knot edge is a point of the surface
+  // with a normal, so both distances go to zero against that tangent plane while X is 3e-5 m from
+  // the surface itself (head_back blend 3369, EXP-103). A foot is right only if X - foot is along
+  // the foot's normal; that, and Newton ending with a step or a distance over the bar, are errors,
+  // not points. (The step can sit at ~1e-14 m for 40 rounds on foot noise; that is still converged.)
+  if(!lm&&(step>FOOT_BAR||miss>FOOT_BAR))throw Error('intersection: corrector did not converge ('+Math.max(step,miss).toExponential(1)+' m)');
+  if(off>FOOT_BAR)throw Error('intersection: no foot on '+S1.type+(S1.node||'')+' x '+S2.type+(S2.node||'')+' settled ('+off.toExponential(1)+' m off its normal)');
   return X;
 }
+/* How far X - foot is from the foot's normal (the sideways part), m. Zero at a true nearest point. */
+const FOOT_BAR=1e-8;
+function footOff(f,X){return norm(sub(sub(X,f.q),mul(f.n,f.d)));}
 /* The surfaces touch at X: their normals are parallel and the curve's direction is undefined. */
 function singular(S1,S2,X,cache){const a=footOn(S1,X,cache),b=footOn(S2,X,cache);return Math.max(Math.abs(a.d),Math.abs(b.d))<1e-9&&norm(cross(a.n,b.n))<1e-6;}
 function tangentAt(S1,S2,X,cache){const a=footOn(S1,X,cache),b=footOn(S2,X,cache);return unit(cross(a.n,b.n));}
