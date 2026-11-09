@@ -13,7 +13,7 @@
  * what the geometry evaluator cannot evaluate is skipped and reported in `notes`.
  */
 const http=require('http'),fs=require('fs'),path=require('path'),{spawn}=require('child_process');
-const S=require('./index'),N=require('./brep/native'),G=require('./geom/eval');
+const S=require('./index'),N=require('./brep/native'),G=require('./geom/eval'),DJ=require('./brep/display-join');
 
 const PAGE=path.resolve(__dirname,'..','web','inspect.html');
 const TAU=2*Math.PI;
@@ -148,18 +148,20 @@ function load(file,opts){
     let d;try{d=S.parse(file);}catch(e){model.meshError=msg(e);return {error:model.meshError};}
     const faces=d.faces||[];let nv=0,nt=0;
     for(const f of faces){nv+=f.vertices.length;nt+=f.triangleIndices.length;}
-    const pos=new Float32Array(nv),idx=new Uint32Array(nt),meta=[];let vo=0,io=0,matched=0;
-    for(const f of faces){
+    const pos=new Float32Array(nv),idx=new Uint32Array(nt),meta=[];let vo=0,io=0,matched=0,ambiguous=0;
+    // rawId is the id the face's own section wrote; it repeats across bodies and sections (EXP-104)
+    const joined=DJ.join(faces,M);
+    for(const [fi,f] of faces.entries()){
       const base=vo/3;pos.set(f.vertices,vo);vo+=f.vertices.length;
       for(let i=0;i<f.triangleIndices.length;i++)idx[io+i]=f.triangleIndices[i]+base;
-      // The saved mesh only names a B-rep face when the record carries an id that exists in the body
-      const rid=f.metadata&&f.metadata.rawId,brep=byId.has(rid)?rid:null;if(brep!==null)matched++;
+      // The saved mesh names a B-rep face through its id, then its surface type and geometry when ids repeat
+      const j=joined[fi],brep=j.face?j.face.id:null;if(brep!==null)matched++;if(j.how==='ambiguous')ambiguous++;
       meta.push({brep,first:io/3,count:f.triangleIndices.length/3});io+=f.triangleIndices.length;
     }
     const used=new Set(meta.map(m=>m.brep).filter(x=>x!==null));
     const mapping=matched===faces.length&&faces.length>0&&used.size===matched
       ?{kind:'exact',note:'each display face carries a B-rep face id that exists in the body'}
-      :matched>0?{kind:'partial',note:matched+' of '+faces.length+' display faces carry a B-rep face id; the rest are not selectable'}
+      :matched>0?{kind:'partial',note:matched+' of '+faces.length+' display faces join a B-rep face'+(ambiguous?' ('+ambiguous+' share an id with another face of the same type and geometry)':'')+'; the rest are not selectable'}
       :{kind:'none',note:'this file\'s display faces carry no B-rep face id; clicking the mesh cannot select a B-rep face'};
     model.mesh={format:d.format,mapping,displayFaces:faces.length,brepFaces:M.faces.length,triangles:nt/3,
       faces:meta,pos:Buffer.from(pos.buffer).toString('base64'),idx:Buffer.from(idx.buffer).toString('base64'),

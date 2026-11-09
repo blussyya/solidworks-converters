@@ -209,13 +209,16 @@ function embedded(b,codec,options){
  * node_ids are moved the same way, because each section numbers its own from 1 and the model
  * builder keys faces and edges by them. */
 function merge(parts){
-  const out={...parts[0],nodes:[...parts[0].nodes],unresolved:[...parts[0].unresolved],sections:parts.length};
-  for(const q of parts.slice(1)){
+  // section_node_id keeps the id each section wrote. The display mesh stores those, not the shifted
+  // ones, so the join between display and B-rep faces needs them (EXP-104).
+  const own=n=>typeof n.values.node_id==='number'?{...n,values:{...n.values,section_node_id:n.values.node_id,merge_section:0}}:n;
+  const out={...parts[0],nodes:parts[0].nodes.map(own),unresolved:[...parts[0].unresolved],sections:parts.length};
+  for(const [k,q] of parts.slice(1).entries()){
     const off=out.nodes.reduce((m,n)=>Math.max(m,n.index),0),sh=i=>i?i+off:i;
     const idOff=out.nodes.reduce((m,n)=>Math.max(m,typeof n.values.node_id==='number'?n.values.node_id:0,typeof n.values.highest_node_id==='number'?n.values.highest_node_id:0),0);
     for(const n of q.nodes){
       const values={...n.values};
-      if(typeof values.node_id==='number')values.node_id+=idOff;
+      if(typeof values.node_id==='number'){values.section_node_id=values.node_id;values.merge_section=k+1;values.node_id+=idOff;}
       if(typeof values.highest_node_id==='number')values.highest_node_id+=idOff;
       for(const f of new Set(n.pointers.map(p=>p.field)))values[f]=Array.isArray(values[f])?values[f].map(sh):sh(values[f]);
       out.nodes.push({...n,index:n.index+off,values,pointers:n.pointers.map(p=>({...p,target:p.target+off}))});
@@ -277,5 +280,5 @@ function readBody(raw,options={},codec){
   return {source,kind,parsed,partitions:primary.candidates,configuration};
 }
 
-return {GUID,streams,sections,extractPrimary,survey,legacyBody,assemble,readBody};
+return {GUID,streams,sections,extractPrimary,survey,legacyBody,assemble,readBody,merge};
 });
