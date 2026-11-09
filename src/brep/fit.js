@@ -117,8 +117,8 @@ function footOn(s,p,cache){
   return {q:e.p,n,d:dot(sub(p,e.p),n)};
 }
 /* Point on S1 ∩ S2 in the plane through g normal to T (Newton on the three equations). */
-function corrector(S1,S2,g,T,cache){
-  let X=g,lm=false,step=Infinity,miss=Infinity,off=0;
+function corrector(S1,S2,g,T,cache,forceLM){
+  let X=g,lm=!!forceLM,step=Infinity,miss=Infinity,off=0;
   for(let it=0;it<(lm?400:40);it++){
     const a=footOn(S1,X,cache),b=footOn(S2,X,cache);
     off=Math.max(footOff(a,X),footOff(b,X));
@@ -151,7 +151,11 @@ function corrector(S1,S2,g,T,cache){
   // the surface itself (head_back blend 3369, EXP-103). A foot is right only if X - foot is along
   // the foot's normal; that, and Newton ending with a step or a distance over the bar, are errors,
   // not points. (The step can sit at ~1e-14 m for 40 rounds on foot noise; that is still converged.)
-  if(!lm&&(step>FOOT_BAR||miss>FOOT_BAR))throw Error('intersection: corrector did not converge ('+Math.max(step,miss).toExponential(1)+' m)');
+  // Near a tangential meeting (plane3449 x blend3452 on head_back: det of the three normals swings
+  // between -1e-2 and 1e-2 without ever being under the 1e-8 that sends Newton to damped least
+  // squares) Newton circles for 40 steps and used to hand back wherever it stopped. Start again
+  // from g with the damped solver, which has its own check below.
+  if(!lm&&(step>FOOT_BAR||miss>FOOT_BAR))return corrector(S1,S2,g,T,cache,true);
   if(off>FOOT_BAR)throw Error('intersection: no foot on '+S1.type+(S1.node||'')+' x '+S2.type+(S2.node||'')+' settled ('+off.toExponential(1)+' m off its normal)');
   return X;
 }
@@ -216,7 +220,12 @@ function chartPoly(S1,S2,A,B,chart){
   const cache=new Map(),poly=[A],n=16;
   for(let i=0;i+1<way.length;i++){const P=way[i],Q=way[i+1],L=dist(P,Q);if(L<1e-12)continue;
     const T=unit(sub(Q,P));let prev=P,prevS=0;
-    for(let k=1;k<=n;k++){const X=k===n?Q:corrector(S1,S2,add(P,mul(sub(Q,P),k/n)),T,cache),sX=dot(sub(X,P),T);
+    // A chord sample the corrector can't settle from is a chord too coarse for the curve (edge 839 on
+    // head_back: a half circle of a pipe has five chart points, and the middle of its chord is on the
+    // pipe's axis, where the foot has no direction). The old Newton ran 40 steps and returned wherever
+    // it stopped; the march takes over instead (EXP-103).
+    const hit=(g)=>{try{return corrector(S1,S2,g,T,cache);}catch(err){throw Error('intersection: chart too coarse to follow ('+err.message+')');}};
+    for(let k=1;k<=n;k++){const X=k===n?Q:hit(add(P,mul(sub(Q,P),k/n))),sX=dot(sub(X,P),T);
       if(!(sX>prevS)||dist(X,prev)>3*L/n)throw Error('intersection: chart too coarse to follow ('+(dist(X,prev)*1e3).toFixed(3)+' mm step)');
       poly.push(X);prev=X;prevS=sX;}}
   return poly;
