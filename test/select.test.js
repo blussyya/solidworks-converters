@@ -27,3 +27,12 @@ test('identical candidates keep the lowest',needs,()=>{
   const r=S.choose(cube('C04_cube_hole_5mm'),[{name:'first',parsed},{name:'second',parsed}],iR,iZ);
   assert.equal(r.name,'first');
 });
+
+// EXP-102: a plain cube with a split line fitted a filleted cube's planes when display faces could
+// share a B-rep face. Each display face now needs a face of its own.
+test('a split-line cube is not read as a filleted one, in either candidate order',needs,()=>{
+  const names=['C03_cube_fillet_1mm','C09_cube_chamfer_1mm','C18_cube_split_line'];
+  const cands=names.map(name=>({name,parsed:P.readBody(cube(name)).parsed}));
+  for(const want of names)for(const order of [cands,[...cands].reverse()])
+    assert.equal(S.choose(cube(want),order,iR,iZ).name,want);
+});

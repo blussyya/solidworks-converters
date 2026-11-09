@@ -92,21 +92,33 @@ const PER_FACE=8,NEAR=3,PREFILTER=1e-6;
 function meshResidual(d,m){
   const at=(s,p,nd)=>{let r;try{r=G.surfaceDistance(s,p);}catch(_){return {pos:Infinity,ang:Math.PI/2};}
     const c=r.n?Math.min(1,Math.abs(G.dot(r.n,nd))/Math.hypot(...nd)):0;return {pos:Math.abs(r.d),ang:Math.acos(c)};};
-  let pos=0,ang=0;
+  // Each display face gets a B-rep face of its own (a one-to-one assignment). Letting several
+  // display faces share one surface made a plain cube with a split line fit a filleted cube: both
+  // halves of the split face sat on one of the fillet cube's planes (C18 vs C03, EXP-102).
+  const edges=[];
   for(const f of d.faces){
-    const n=f.vertices.length/3;if(!n)continue;
+    const n=f.vertices.length/3,row=[];edges.push(row);if(!n)continue;
     const k=Math.min(n,PER_FACE),pts=[];
     for(let i=0;i<k;i++){const j=3*Math.floor(i*n/k);pts.push({p:[f.vertices[j],f.vertices[j+1],f.vertices[j+2]],n:[f.normals[j],f.normals[j+1],f.normals[j+2]]});}
     // surfaces through the first vertex, or the NEAR closest when none is
-    const first=m.faces.map(b=>({s:b.surface,pos:at(b.surface,pts[0].p,pts[0].n).pos})).sort((x,y)=>x.pos-y.pos);
-    const tried=first.filter((x,i)=>x.pos<=PREFILTER||i<NEAR);
-    let best=null;
-    for(const t of tried){
-      const r=pts.map(q=>at(t.s,q.p,q.n)),fp=Math.max(...r.map(x=>x.pos)),fa=Math.max(...r.map(x=>x.ang));
-      if(!best||better({pos:fp,ang:fa},best))best={pos:fp,ang:fa};
+    const first=m.faces.map((b,bi)=>({bi,s:b.surface,pos:at(b.surface,pts[0].p,pts[0].n).pos})).sort((x,y)=>x.pos-y.pos);
+    for(const t of first.filter((x,i)=>x.pos<=PREFILTER||i<NEAR)){
+      const r=pts.map(q=>at(t.s,q.p,q.n));row.push({bi:t.bi,pos:Math.max(...r.map(x=>x.pos)),ang:Math.max(...r.map(x=>x.ang))});
     }
-    pos=Math.max(pos,best.pos);ang=Math.max(ang,best.ang);
   }
+  const used=edges.map((r,i)=>r.length?i:-1).filter(i=>i>=0);
+  // Is there an assignment using only edges that pass ok? (Kuhn's augmenting paths.)
+  const assign=ok=>{const owner=new Map();
+    const tryF=(i,seen)=>{for(const e of edges[i]){if(!ok(e)||seen.has(e.bi))continue;seen.add(e.bi);
+      if(!owner.has(e.bi)||tryF(owner.get(e.bi),seen)){owner.set(e.bi,i);return true;}}return false;};
+    return used.every(i=>tryF(i,new Set()));};
+  // smallest worst distance any assignment reaches, then the smallest worst angle within it
+  const lowest=(vals,ok)=>{vals=[...new Set(vals)].sort((x,y)=>x-y);let lo=0,hi=vals.length-1;
+    if(hi<0||!ok(vals[hi]))return Infinity;
+    while(lo<hi){const mid=(lo+hi)>>1;if(ok(vals[mid]))hi=mid;else lo=mid+1;}return vals[lo];};
+  const all=edges.flat(),pos=lowest(all.map(e=>e.pos),T=>assign(e=>e.pos<=T));
+  if(pos===Infinity)return {pos,ang:Math.PI/2};
+  const P=Math.max(pos,BAR),ang=lowest(all.filter(e=>e.pos<=P).map(e=>e.ang),A=>assign(e=>e.pos<=P&&e.ang<=A));
   return {pos,ang};
 }
 /* a beats b: both within BAR and a's angle is smaller, or a is closer. */
