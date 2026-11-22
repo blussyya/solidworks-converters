@@ -64,26 +64,46 @@ function nearestParam(c,q,t){
 function fitPoints(fn,ss,tol,opts){
   opts=opts||{};
   let s=ss.slice(),pts=s.map((x,i)=>opts.fixed&&opts.fixed[i]?opts.fixed[i]:fn(x));
-  if(opts.ends){pts[0]=opts.ends[0];pts[pts.length-1]=opts.ends[1];}
+  // A pinned end is only as close to the curve as the point it's pinned to, and the fit's own
+  // samples can't show that: as the end interval is split they bunch up beside a point the fit
+  // passes through. A vertex 1e-4 m off still reported 7e-9 m (EXP-103 blind check). So the gap
+  // counts in the error.
+  let endGap=0;
+  if(opts.ends){[[0,opts.ends[0]],[pts.length-1,opts.ends[1]]].forEach(([i,p])=>{if(pts[i])endGap=Math.max(endGap,dist(pts[i],p));pts[i]=p;});}
   // fn may give null where it has no point of this curve (polyFn near a T limit): that sample is
   // counted in offBranch, not fitted, and not pinned
   let curve,error=Infinity,offBranch=0;
-  for(let round=0;round<16;round++){
-    const t=chordParams(pts);offBranch=0;
-    curve={type:'bspline',...interp(pts,t,3),weights:null,closed:false};
+  // The cheap check samples each interval at 3 points. Once it passes, a dense pass checks 8 more
+  // points per interval on the same curve, since an error can sit between the cheap samples (edge
+  // 826 on 82981f2a, 1.12e-8 m unseen at 9.7e-9, EXP-087). If the dense pass finds a bad interval,
+  // it's split and the cheap rounds carry on until they pass again, then another dense pass.
+  const CHEAP=[0.5,0.25,0.75],DENSE=[0.1,0.2,0.3,0.4,0.6,0.7,0.8,0.9];
+  let dense=false,cheapErr=0,denseDone=false;
+  for(let round=0;round<(opts.maxRounds||24);round++){
+    const t=chordParams(pts);if(!dense)offBranch=0;
+    if(!dense)curve={type:'bspline',...interp(pts,t,3),weights:null,closed:false};
     const bad=[];error=0;
     for(let i=0;i<s.length-1;i++){
       let e=0;
-      for(const f of [0.5,0.25,0.75]){const q=fn(s[i]+(s[i+1]-s[i])*f);if(!q){offBranch++;continue;}
+      for(const f of dense?DENSE:CHEAP){const q=fn(s[i]+(s[i+1]-s[i])*f);if(!q){offBranch++;continue;}
         const u=nearestParam(curve,q,t[i]+(t[i+1]-t[i])*f);e=Math.max(e,dist(q,G.bsplineCurve(curve,u).p));}
       error=Math.max(error,e);if(e>tol)bad.push(i);
     }
-    if(!bad.length||s.length>20000)break;
+    if(dense){error=Math.max(error,cheapErr);denseDone=true;}else{cheapErr=error;denseDone=false;}
+    if(s.length>20000)break;
+    if(!bad.length){if(dense)break;dense=true;continue;}
+    dense=false;
     const ns=[],np=[];
     for(let i=0;i<s.length;i++){ns.push(s[i]);np.push(pts[i]);if(bad.includes(i)){const m=(s[i]+s[i+1])/2,q=fn(m);if(q){ns.push(m);np.push(q);}}}
     s=ns;pts=np;
   }
-  return {curve,error,samples:s.length,offBranch};
+  // Out of rounds (or samples) before a dense pass saw the last curve: the error still includes it.
+  // The cheap error, if the last round split intervals, is for a curve already superseded: refit
+  // and measure both ways.
+  if(!denseDone){const t=chordParams(pts);curve={type:'bspline',...interp(pts,t,3),weights:null,closed:false};error=0;
+    for(let i=0;i<s.length-1;i++)for(const f of [...CHEAP,...DENSE]){const q=fn(s[i]+(s[i+1]-s[i])*f);if(!q)continue;
+      const u=nearestParam(curve,q,t[i]+(t[i+1]-t[i])*f);error=Math.max(error,dist(q,G.bsplineCurve(curve,u).p));}}
+  return {curve,error:Math.max(error,endGap),samples:s.length,offBranch};
 }
 
 /* ---------------- exact points ---------------- */
@@ -108,10 +128,11 @@ function footOn(s,p,cache){
   return {q:e.p,n,d:dot(sub(p,e.p),n)};
 }
 /* Point on S1 ∩ S2 in the plane through g normal to T (Newton on the three equations). */
-function corrector(S1,S2,g,T,cache){
-  let X=g,lm=false;
+function corrector(S1,S2,g,T,cache,forceLM){
+  let X=g,lm=!!forceLM,step=Infinity,miss=Infinity,off=0;
   for(let it=0;it<(lm?400:40);it++){
     const a=footOn(S1,X,cache),b=footOn(S2,X,cache);
+    off=Math.max(footOff(a,X),footOff(b,X));
     const F=[a.d,b.d,dot(sub(X,g),T)];
     const M=[a.n,b.n,T],det=dot(M[0],cross(M[1],M[2]));
     // Where the surfaces touch (a blend that runs out tangentially) the normals are parallel and
@@ -130,13 +151,28 @@ function corrector(S1,S2,g,T,cache){
     // Δ = -M^{-1} F, rows of M are the gradients
     const c0=cross(M[1],M[2]),c1=cross(M[2],M[0]),c2=cross(M[0],M[1]);
     const D=mul(add(add(mul(c0,F[0]),mul(c1,F[1])),mul(c2,F[2])),-1/det);
-    X=add(X,D);
-    if(norm(D)<1e-16+1e-15*norm(X))break;
+    X=add(X,D);step=norm(D);miss=Math.max(Math.abs(a.d),Math.abs(b.d));
+    if(step<1e-16+1e-15*norm(X))break;
   }
   if(lm){const a=footOn(S1,X,cache),b=footOn(S2,X,cache);
-    if(Math.max(Math.abs(a.d),Math.abs(b.d))>1e-8)throw Error('intersection: surfaces tangent, no common point ('+Math.max(Math.abs(a.d),Math.abs(b.d)).toExponential(1)+' m)');}
+    if(Math.max(Math.abs(a.d),Math.abs(b.d))>1e-8)throw Error('intersection: surfaces tangent, no common point ('+Math.max(Math.abs(a.d),Math.abs(b.d)).toExponential(1)+' m)');
+    off=Math.max(footOff(a,X),footOff(b,X));}
+  // Newton can stop moving on a wrong foot: a foot clamped at a knot edge is a point of the surface
+  // with a normal, so both distances go to zero against that tangent plane while X is 3e-5 m from
+  // the surface itself (head_back blend 3369, EXP-103). A foot is right only if X - foot is along
+  // the foot's normal; that, and Newton ending with a step or a distance over the bar, are errors,
+  // not points. (The step can sit at ~1e-14 m for 40 rounds on foot noise; that is still converged.)
+  // Near a tangential meeting (plane3449 x blend3452 on head_back: det of the three normals swings
+  // between -1e-2 and 1e-2 without ever being under the 1e-8 that sends Newton to damped least
+  // squares) Newton circles for 40 steps and used to hand back wherever it stopped. Start again
+  // from g with the damped solver, which has its own check below.
+  if(!lm&&(step>FOOT_BAR||miss>FOOT_BAR))return corrector(S1,S2,g,T,cache,true);
+  if(off>FOOT_BAR)throw Error('intersection: no foot on '+S1.type+(S1.node||'')+' x '+S2.type+(S2.node||'')+' settled ('+off.toExponential(1)+' m off its normal)');
   return X;
 }
+/* How far X - foot is from the foot's normal (the sideways part), m. Zero at a true nearest point. */
+const FOOT_BAR=1e-8;
+function footOff(f,X){return norm(sub(sub(X,f.q),mul(f.n,f.d)));}
 /* The surfaces touch at X: their normals are parallel and the curve's direction is undefined. */
 function singular(S1,S2,X,cache){const a=footOn(S1,X,cache),b=footOn(S2,X,cache);return Math.max(Math.abs(a.d),Math.abs(b.d))<1e-9&&norm(cross(a.n,b.n))<1e-6;}
 function tangentAt(S1,S2,X,cache){const a=footOn(S1,X,cache),b=footOn(S2,X,cache);return unit(cross(a.n,b.n));}
@@ -195,7 +231,12 @@ function chartPoly(S1,S2,A,B,chart){
   const cache=new Map(),poly=[A],n=16;
   for(let i=0;i+1<way.length;i++){const P=way[i],Q=way[i+1],L=dist(P,Q);if(L<1e-12)continue;
     const T=unit(sub(Q,P));let prev=P,prevS=0;
-    for(let k=1;k<=n;k++){const X=k===n?Q:corrector(S1,S2,add(P,mul(sub(Q,P),k/n)),T,cache),sX=dot(sub(X,P),T);
+    // A chord sample the corrector can't settle from is a chord too coarse for the curve (edge 839 on
+    // head_back: a half circle of a pipe has five chart points, and the middle of its chord is on the
+    // pipe's axis, where the foot has no direction). The old Newton ran 40 steps and returned wherever
+    // it stopped; the march takes over instead (EXP-103).
+    const hit=(g)=>{try{return corrector(S1,S2,g,T,cache);}catch(err){throw Error('intersection: chart too coarse to follow ('+err.message+')');}};
+    for(let k=1;k<=n;k++){const X=k===n?Q:hit(add(P,mul(sub(Q,P),k/n))),sX=dot(sub(X,P),T);
       if(!(sX>prevS)||dist(X,prev)>3*L/n)throw Error('intersection: chart too coarse to follow ('+(dist(X,prev)*1e3).toFixed(3)+' mm step)');
       poly.push(X);prev=X;prevS=sX;}}
   return poly;
@@ -203,7 +244,13 @@ function chartPoly(S1,S2,A,B,chart){
 /* Exact point at fraction s of a polyline of exact points: Newton in the plane normal to the chord. */
 function polyFn(S1,S2,poly){
   const L=[0];for(let i=1;i<poly.length;i++)L.push(L[i-1]+dist(poly[i],poly[i-1]));const tot=L[L.length-1];
-  const cache=new Map();
+  // Each call seeds the corrector from the feet at its segment's start vertex. The feet are found
+  // once, in order along the polyline, each seeded from the one before, so a point never depends
+  // on which call came before it. Seeded from the last call instead, a call far along the polyline
+  // (a fit check going back to the start) starts from feet a whole thread turn away and can land
+  // on another turn (3e-3 m off on db8a97e2, EXP-087).
+  const feet=[];let run=new Map();
+  const seed=i=>{while(feet.length<=i){const P=poly[feet.length];footOn(S1,P,run);footOn(S2,P,run);feet.push(new Map(run));}return new Map(feet[i]);};
   // the ends where the surfaces (nearly) touch: a T limit, normals within 1e-3 rad
   const touch=[0,poly.length-1].filter(i=>{try{const a=footOn(S1,poly[i],new Map()),b=footOn(S2,poly[i],new Map());return norm(cross(a.n,b.n))<1e-3;}catch(e){return false;}}).map(i=>poly[i]);
   return {ss:L.map(x=>x/tot),fn:s=>{
@@ -215,7 +262,7 @@ function polyFn(S1,S2,poly){
     // crosses there (head_back blend 9931's spine: 1.5e-7 m to the side, 60 pm from the end), and a
     // fit pinned to such points loops out ~1 µm. No point is given then. (Only at a touching end: on
     // 5f8e9db3's tight spring coils a chord is enough shorter than its arc to fail the test.)
-    const g=add(a,mul(sub(b,a),f)),X=corrector(S1,S2,g,unit(sub(b,a)),cache);
+    const g=add(a,mul(sub(b,a),f)),X=corrector(S1,S2,g,unit(sub(b,a)),seed(i-1));
     for(const P of [a,b])if(touch.includes(P)&&dist(X,P)>2*dist(g,P)+1e-12)return null;
     return X;}};
 }
@@ -223,7 +270,7 @@ function polyFn(S1,S2,poly){
 /* ---------------- edges ---------------- */
 function edgeCurve(e,c,p0,p1,opts){
   const tol=(opts&&opts.tolerance)||1e-8;
-  if(c.type==='spcurve')return spcurveEdge(e,c,p0,p1,tol);
+  if(c.type==='spcurve')return spcurveEdge(e,c,p0,p1,tol,opts&&opts.vertexTolerance);
   if(c.type==='intersection'){
     const [S1,S2]=c.surfaces;
     if(S1.type==='blendBound'||S2.type==='blendBound')return contactEdge(e,c,p0,p1,tol);
@@ -286,6 +333,25 @@ function intersectionEdge(e,c,p0,p1,tol){
   const [a,b]=G.curveRange(r.curve);
   return {curve:r.curve,t0:a,t1:b,error:r.error,ringStart:ring?poly[0]:null};
 }
+/* The ends a fit of fn over [s0, s1] is pinned to. A vertex further from the curve than the fit
+ * bar but within its tolerance (the larger of the edge's and its own: in Parasolid that is how far
+ * a vertex may sit from its curves) is a tolerant vertex next to a right curve. Pinned, it bends
+ * the fit's last interval into a hook (head_back edge 844: tolerance 2e-5 m, vertex 1.1e-6 m off
+ * the blend section the edge runs on). There the curve ends on the curve and the vertex keeps its
+ * tolerance, as for intersection and contact edges. A vertex further off than that stays pinned:
+ * the curve or the vertex is wrong (Parasolid's own u on a fitted blend can put a curve centimetres
+ * off; f0b9a118's edge 152 has a vertex 4.5e-4 m off with a 1e-6 m tolerance), and fitPoints
+ * counts the gap in the error, which says so (EXP-103). tols: per end, in the order of ends. */
+function endsFor(fn,s0,s1,ends,tol,tols){
+  if(!ends)return null;const out=ends.slice();
+  [s0,s1].forEach((x,i)=>{const q=fn(x),g=dist(q,ends[i]);if(g>tol&&g<=((tols&&tols[i])||0))out[i]=q;});
+  return out;
+}
+/* Parameter in [0,1] near t where f(x) is nearest q: halving search from step h. The grids that
+ * find t place a curve's end to 1/1024 at best, which only matters once the end isn't pinned. */
+function nearest01(f,q,t,h){let bd=dist(f(t),q);
+  for(let k=0;k<50;k++){for(const x of [t-h,t+h]){if(x<0||x>1)continue;const d=dist(f(x),q);if(d<bd){bd=d;t=x;}}h/=2;}
+  return t;}
 /* Contact curve of a blend with one support: Parasolid gives it as the intersection of the
  * support with a BLEND_BOUND surface; its points are the feet of the spine on the support. */
 function sameGeometry(a,b){
@@ -327,7 +393,7 @@ function contactEdge(e,c,p0,p1,tol){
   return ta<=tb?{curve:r.curve,t0:x,t1:y,error:r.error}:{curve:r.curve,t0:y,t1:x,error:r.error};
 }
 /* SP_CURVE: the surface's image of its 2D B-spline. On a plane the image is itself a B-spline. */
-function spcurveEdge(e,c,p0,p1,tol){
+function spcurveEdge(e,c,p0,p1,tol,vtol){
   const S=c.surface;
   let ta=p0?G.curveProject(c,p0).t:G.curveRange(c)[0],tb=p1?G.curveProject(c,p1).t:G.curveRange(c)[1];
   // a projection at a degenerate tip (a blend's u=0 station, where the v parameter is free until
@@ -346,10 +412,14 @@ function spcurveEdge(e,c,p0,p1,tol){
   const ss=[];for(let i=0;i<=N;i++)ss.push(lo+(hi-lo)*i/N);
   const fn=t=>G.curvePoint(c,t);
   const ends=p0?(ta<tb?[p0,p1]:[p1,p0]):null;
+  // each end's tolerance: the larger of the edge's and its vertex's, in the order of ends
+  const vt=vtol||[0,0],et=e.tolerance||0,tols=[Math.max(et,vt[0]||0),Math.max(et,vt[1]||0)],endTols=ta<tb?tols:[tols[1],tols[0]];
   const finish=r=>{const [a,b]=G.curveRange(r.curve);
     return ta<=tb?{curve:r.curve,t0:a,t1:b,error:r.error}:{curve:r.curve,t0:b,t1:a,error:r.error};};
   let out,firstErr=null;
-  try{out=finish(fitPoints(fn,ss,tol,{ends}));}
+  // On a fitted blend the plain fit's u is Parasolid's, not ours, and can put the curve beside the
+  // edge: its ends stay pinned, so a gap shows in the error and reanchor gets its turn.
+  try{out=finish(fitPoints(fn,ss,tol,{ends:endsFor(fn,lo,hi,ends,tol,S.uRange?null:endTols)}));}
   catch(err){firstErr=err;}
   // Parasolid's own (u,v) for a blended_edge is inherited from a spine we never see: the 2D
   // curve's u is a scale of Parasolid's choice, not of our reconstructed spine, so the plain fit
@@ -357,7 +427,7 @@ function spcurveEdge(e,c,p0,p1,tol){
   // the curve runs along one axis, anchor it on the fitted surface through the edge's vertices.
   if((!out||out.error>tol)&&S.uRange&&p0&&p1){
     let alt=null;
-    try{alt=reanchor(S,c,p0,p1,N,tol);}catch(err){if(!firstErr)firstErr=err;}
+    try{alt=reanchor(S,c,p0,p1,N,tol,tols);}catch(err){if(!firstErr)firstErr=err;}
     if(alt&&(!out||alt.error<=out.error))out=alt;
   }
   if(!out&&ends&&dist(ends[0],ends[1])<Math.max(64*tol,1e-9)){
@@ -370,7 +440,7 @@ function spcurveEdge(e,c,p0,p1,tol){
 /* Re-anchor an SP_CURVE on a fitted blend by its vertices: the edge lies on the blend, so the
  * section (v-line) or boundary curve (u-line) that passes through both vertices is the curve.
  * Refit against that, in the fitted surface's own parameters. */
-function reanchor(S,c,p0,p1,N,tol){
+function reanchor(S,c,p0,p1,N,tol,tols){
   const [d,z]=G.curveRange(c.c2),M=24,us=[],vs=[];
   for(let i=0;i<=M;i++){const q=G.curvePoint(c.c2,d+(z-d)*i/M);us.push(q[0]);vs.push(q[1]);}
   const umin=Math.min(...us),umax=Math.max(...us),vmin=Math.min(...vs),vmax=Math.max(...vs);
@@ -388,16 +458,15 @@ function reanchor(S,c,p0,p1,N,tol){
       let bv=jA/K,bq=dq;
       for(let w=-Math.ceil(K/2);w<=Math.ceil(K/2);w++){const v=Math.min(1,Math.max(0,jA/K+w/(K*K)));
         const s=dist(G.surfaceEval(S,bt,v).p,q);if(s<bq){bq=s;bv=v;}}
-      return bv;};
+      return nearest01(v=>G.surfaceEval(S,bt,v).p,q,bv,1/(K*K));};
     const vA=anchors(p0),vB=anchors(p1);
     // the 2D curve's own start maps to the anchor whose image sits nearest its start vertex;
     // when both images are closer to one vertex (a sliver), fall back to the 2D v direction
     const startV=G.curvePoint(c.c2,d)[1];
     const fwd=(startV-vmin)*(vmax-vmin)>=0? vA<=vB : vB<=vA;
     const a0=Math.min(vA,vB),a1=Math.max(vA,vB);
-    const ends=fwd?[p0,p1]:[p1,p0];
-    const r=fitPoints(s=>G.surfaceEval(S,bt,a0+(a1-a0)*s).p,
-      Array.from({length:N+1},(_,i)=>i/N),tol,{ends});
+    const ends=fwd?[p0,p1]:[p1,p0],f=s=>G.surfaceEval(S,bt,a0+(a1-a0)*s).p;
+    const r=fitPoints(f,Array.from({length:N+1},(_,i)=>i/N),tol,{ends:endsFor(f,0,1,ends,tol,tols&&(fwd?tols:[tols[1],tols[0]]))});
     const [x,y]=G.curveRange(r.curve);
     return fwd?{curve:r.curve,t0:x,t1:y,error:r.error}:{curve:r.curve,t0:y,t1:x,error:r.error};
   }
@@ -408,16 +477,15 @@ function reanchor(S,c,p0,p1,N,tol){
       let bvv=bt2,bq=dq;
       for(let w=-8;w<=8;w++){const t=Math.min(1,Math.max(0,bt2+w/(256*8)));
         const s=dist(G.surfaceEval(S,t,vc).p,q);if(s<bq){bq=s;bvv=t;}}
-      return bvv;};
+      return nearest01(t=>G.surfaceEval(S,t,vc).p,q,bvv,1/(256*8));};
     const tA=anchors(p0),tB=anchors(p1);
     const startU=us[0],mid=(umin+umax)/2;
     // the fit runs from the lower anchor to the higher, so the anchors give the direction; the
     // 2D curve's start only decides a tie (both ends found at the same parameter)
     const fwd=tA!==tB?tA<tB:startU<mid;
     const b0=Math.min(tA,tB),b1=Math.max(tA,tB);
-    const ends=fwd?[p0,p1]:[p1,p0];
-    const r=fitPoints(s=>G.surfaceEval(S,b0+(b1-b0)*s,vc).p,
-      Array.from({length:N+1},(_,i)=>i/N),tol,{ends});
+    const ends=fwd?[p0,p1]:[p1,p0],f=s=>G.surfaceEval(S,b0+(b1-b0)*s,vc).p;
+    const r=fitPoints(f,Array.from({length:N+1},(_,i)=>i/N),tol,{ends:endsFor(f,0,1,ends,tol,tols&&(fwd?tols:[tols[1],tols[0]]))});
     const [x,y]=G.curveRange(r.curve);
     return fwd?{curve:r.curve,t0:x,t1:y,error:r.error}:{curve:r.curve,t0:y,t1:x,error:r.error};
   }
