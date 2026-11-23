@@ -111,6 +111,7 @@ function build(parsed){
   // node_ids are unique within a body, not within a partition: d0d61cde's solid and its four
   // reference sheets each have an edge 7 (EXP-085). A node_id used once stays the id, so it still
   // matches the display mesh; repeats get fresh ids above the highest, visible bodies first.
+  // displayId is the id the section wrote and the display mesh stores; join with src/brep/display-join.js.
   const hidden=new Set(parsed.hidden||[]),shellBody=s=>s&&node(s).values.body;
   const bodyOf=n=>n.type===14?shellBody(n.values.shell)||shellBody(n.values.front_shell):n.values.owner;
   const idOf=new Map();
@@ -137,7 +138,7 @@ function build(parsed){
     if(cn){c=curve(e.values.curve);same=sgn(cn.values.sense)*(c.basisSense||1)>0;}
     else if(pcurves.length){c=pcurves[0].curve;same=pcurves[0].sameSense;}   // tolerant edge: its geometry lives on the fins
     else throw Error('B-rep: edge '+e.values.node_id+' has no curve');
-    edges.set(idOf.get(e.index),{id:idOf.get(e.index),v:start===null&&end===null?null:[start,end],curve:c,sameSense:same,tolerance:e.values.tolerance,pcurves,tolerant:!cn});
+    edges.set(idOf.get(e.index),{id:idOf.get(e.index),displayId:e.values.section_node_id!==undefined?e.values.section_node_id:e.values.node_id,v:start===null&&end===null?null:[start,end],curve:c,sameSense:same,tolerance:e.values.tolerance,pcurves,tolerant:!cn});
   }
   // bodies SolidWorks marks as not part of the finished part (src/parasolid/partition.js)
   for(const f of parsed.nodes.filter(n=>n.type===14)){
@@ -149,7 +150,7 @@ function build(parsed){
         x=fin.values.forward;if(++guard>1e6)throw Error('B-rep: open fin ring');}while(x!==first);
       loops.push(co.length?{coedges:co}:{coedges:co,vertex:lone});
     }
-    faces.push({id:idOf.get(f.index),surface:surface(f.values.surface),sameSense:sgn(sn.values.sense)*sgn(f.values.sense)>0,loops,shell:f.values.shell,frontShell:f.values.front_shell});
+    faces.push({id:idOf.get(f.index),displayId:f.values.section_node_id!==undefined?f.values.section_node_id:f.values.node_id,body:shellBody(f.values.shell)||shellBody(f.values.front_shell),surface:surface(f.values.surface),sameSense:sgn(sn.values.sense)*sgn(f.values.sense)>0,loops,shell:f.values.shell,frontShell:f.values.front_shell});
   }
   for(const v of parsed.nodes.filter(n=>n.type===18))if(!hidden.has(v.values.owner))vertex(v.index);
   // a hidden body's edges go with its faces

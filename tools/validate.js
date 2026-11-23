@@ -15,7 +15,7 @@
  * ../kz-build/venv-sldprt/bin/python, or set SLDPRT_OCP_PYTHON.
  */
 const fs=require('fs'),path=require('path'),os=require('os'),{spawnSync}=require('child_process');
-const S=require('../src'),X=require('../src/step/export');
+const S=require('../src'),X=require('../src/step/export'),N=require('../src/brep/native'),DJ=require('../src/brep/display-join');
 
 const REL=1e-6,REL_LOOSE=1e-5;
 function args(){
@@ -39,8 +39,9 @@ function reference(f){
   return null;
 }
 /* Interior display-mesh vertices per native face (mm), and the mesh's signed volume (mm³). */
-function meshPoints(f,max){
-  const d=S.parse(f),faces={};let vol=0,n=0;
+function meshPoints(f,max,parsed){
+  // STEP faces are named F<native id>; rawId alone names the wrong face when ids repeat across bodies and sections (EXP-104)
+  const d=S.parse(f),faces={},M=N.build(parsed),joined=new Map(DJ.join(d.faces,M).map((r,i)=>[d.faces[i],r.face]));let vol=0,n=0;
   // a vertex at the same place in two faces' meshes is on an edge, annotated or not; SolidWorks'
   // edge vertices can sit up to ~0.1 mm off the faces, so only interior vertices are compared
   const key=(df,i)=>[0,1,2].map(j=>Math.round(df.vertices[3*i+j]*1e7)).join(','),seen=new Map();
@@ -50,10 +51,11 @@ function meshPoints(f,max){
     const t=df.triangleIndices;
     for(let k=0;k<t.length;k+=3){const a=V(t[k]),b=V(t[k+1]),c=V(t[k+2]);
       vol+=(a[0]*(b[1]*c[2]-b[2]*c[1])-a[1]*(b[0]*c[2]-b[2]*c[0])+a[2]*(b[0]*c[1]-b[1]*c[0]))/6;}
-    if(!df.metadata)continue;
+    if(!df.metadata||!joined.get(df))continue;
+    const nf=joined.get(df),key2='F'+(nf.source!==undefined?nf.source:nf.id);
     const bnd=new Set();for(const e of df.edgeAnnotations||[])if(e.id)for(const v of e.vertices)bnd.add(v);
     const pts=[];for(let i=0;i<df.vertexCount;i++)if(!bnd.has(i)&&seen.get(key(df,i))===df)pts.push(V(i));
-    if(pts.length){(faces['F'+df.metadata.rawId]=faces['F'+df.metadata.rawId]||[]).push(...pts);n+=pts.length;}
+    if(pts.length){(faces[key2]=faces[key2]||[]).push(...pts);n+=pts.length;}
   }
   const keep=Math.min(1,max/Math.max(1,n));
   for(const k in faces){const a=faces[k],step=Math.max(1,Math.round(1/keep));faces[k]=a.filter((_,i)=>i%step===0);}
@@ -78,7 +80,7 @@ function run(o){
     const file=path.join(out,rel.replace(/[\\/ ]/g,'_').replace(/\.sldprt$/i,'.step'));fs.writeFileSync(file,r.text);row.step=file;
     const job={id:rows.length-1,step:file},ref=reference(f);
     if(ref){job.ref=ref;row.ref=path.relative(corpus,ref);}
-    else{const m=meshPoints(f,6000),mf=file.replace(/\.step$/,'.mesh.json');fs.writeFileSync(mf,JSON.stringify(m));job.mesh=mf;row.meshVolume=m.volume;}
+    else{const m=meshPoints(f,6000,brep.parsed),mf=file.replace(/\.step$/,'.mesh.json');fs.writeFileSync(mf,JSON.stringify(m));job.mesh=mf;row.meshVolume=m.volume;}
     jobs.push(job);
   }
   const p=spawnSync('nice',['-n','10',python,path.join(__dirname,'validate-step.py')],{input:jobs.map(j=>JSON.stringify(j)).join('\n')+'\n',encoding:'utf8',maxBuffer:1<<28});

@@ -70,7 +70,7 @@ function resolve(N,opts){
       // a blend's contact curve (one surface a BLEND_BOUND) is built from the raw blend and its
       // raw supports, which may be blends themselves; the fitted copies would not be found there
       else if(!c.surfaces.some(q=>q.type==='blendBound'))c={...c,surfaces:c.surfaces.map(q=>q.type==='blend'&&Math.abs(Math.abs(q.range[0])-Math.abs(q.range[1]))<1e-12?q:surfMemo.get(q)||q)};
-      const r=Fit.edgeCurve(e,c,p0,p1,{tolerance:tol,faceOf});
+      const r=Fit.edgeCurve(e,c,p0,p1,{tolerance:tol,faceOf,vertexTolerance:e.v?e.v.map(v=>N.vertices.get(v).tolerance||0):null});
       out={curve:r.curve,t0:r.t0,t1:r.t1,fit:r.error};report.fittedCurves++;report.errors.curve=Math.max(report.errors.curve,r.error);
     }else throw Error('resolve: edge '+e.id+' curve '+c.type);
     // exact curves in the faces' parameter spaces (SP_CURVE fins), on the resolved surfaces

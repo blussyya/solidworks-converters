@@ -18,8 +18,8 @@
  * Configuration: N is the one that was active when the file was saved. Header2 is a copy of that
  * configuration's Config-N-ModelHeader (after a rename only the document name differs), so N is the
  * ModelHeader closest to Header2 (EXP-084: Config-3 of 0-3, Config-7 of 1 and 7). Files without
- * ModelHeaders (before about SW2020) get the lowest N; in the corpus their configurations all have
- * the same face count, but that does not make them the same shape.
+ * ModelHeaders (before about SW2020) get the configuration whose face count and box match the saved
+ * display (select.js, EXP-094 and EXP-098), else the lowest N.
  *
  * Bodies: the first section of Config-N-Partition, plus the bodies in
  * Config-N-FeatureBodies/LocalBodies (imported, one per section). Of all of them, the ones whose
@@ -39,9 +39,9 @@
     const zlib=require('zlib'),MAX=128*1024*1024;
     module.exports=factory(require('../container/modern'),require('../container/ole'),require('./xt'),
       {inflateRaw:b=>zlib.inflateRawSync(b,{maxOutputLength:MAX}),inflate:b=>zlib.inflateSync(b,{maxOutputLength:MAX})},
-      require('../container/blast'));
-  }else root.SLDPRTPartition=factory(root.SLDPRTModern,root.SLDPRTOLE,root.SLDPRTXT,root.SLDPRTInflate,root.SLDPRTBlast);
-})(typeof self!=='undefined'?self:this,function(modern,OLE,xt,defaultCodec,Blast){
+      require('../container/blast'),()=>require('./select'));
+  }else root.SLDPRTPartition=factory(root.SLDPRTModern,root.SLDPRTOLE,root.SLDPRTXT,root.SLDPRTInflate,root.SLDPRTBlast,()=>root.SLDPRTSelect);
+})(typeof self!=='undefined'?self:this,function(modern,OLE,xt,defaultCodec,Blast,selector){
 'use strict';
 const {parse}=xt;
 const MAX=128*1024*1024;
@@ -124,7 +124,7 @@ function closeness(a,b){
 }
 
 /* The partition of the configuration active at save time: the one whose ModelHeader is closest to
- * Header2, else the lowest N. */
+ * Header2, else the lowest N (readBody then asks the display, see byDisplay). */
 function activePartition(s,candidates){
   const h=s.Header2;let best=null,score=0;
   if(h)for(const name of candidates){
@@ -209,13 +209,16 @@ function embedded(b,codec,options){
  * node_ids are moved the same way, because each section numbers its own from 1 and the model
  * builder keys faces and edges by them. */
 function merge(parts){
-  const out={...parts[0],nodes:[...parts[0].nodes],unresolved:[...parts[0].unresolved],sections:parts.length};
-  for(const q of parts.slice(1)){
+  // section_node_id keeps the id each section wrote. The display mesh stores those, not the shifted
+  // ones, so the join between display and B-rep faces needs them (EXP-104).
+  const own=n=>typeof n.values.node_id==='number'?{...n,values:{...n.values,section_node_id:n.values.node_id,merge_section:0}}:n;
+  const out={...parts[0],nodes:parts[0].nodes.map(own),unresolved:[...parts[0].unresolved],sections:parts.length};
+  for(const [k,q] of parts.slice(1).entries()){
     const off=out.nodes.reduce((m,n)=>Math.max(m,n.index),0),sh=i=>i?i+off:i;
     const idOff=out.nodes.reduce((m,n)=>Math.max(m,typeof n.values.node_id==='number'?n.values.node_id:0,typeof n.values.highest_node_id==='number'?n.values.highest_node_id:0),0);
     for(const n of q.nodes){
       const values={...n.values};
-      if(typeof values.node_id==='number')values.node_id+=idOff;
+      if(typeof values.node_id==='number'){values.section_node_id=values.node_id;values.merge_section=k+1;values.node_id+=idOff;}
       if(typeof values.highest_node_id==='number')values.highest_node_id+=idOff;
       for(const f of new Set(n.pointers.map(p=>p.field)))values[f]=Array.isArray(values[f])?values[f].map(sh):sh(values[f]);
       out.nodes.push({...n,index:n.index+off,values,pointers:n.pointers.map(p=>({...p,target:p.target+off}))});
@@ -223,6 +226,33 @@ function merge(parts){
     out.unresolved.push(...q.unresolved.map(u=>({...u,from:u.from+off,target:u.target+off})));
   }
   return out;
+}
+
+/* One configuration's bodies as the converter exports them: the first section of its partition,
+ * its in-part LocalBodies, and the BODY_IN_LIGHTWEIGHT_PERM = 0 bodies listed in `hidden`. */
+function assemble(all,name,codec,options){
+  const stream=all[name];
+  if(hex(stream.subarray(4,20))!==GUID_HEX)throw Error(name+' does not start with the section GUID');
+  let parsed=parse(payload(stream,0,u32(stream,0),codec,options),true,options),source=name,kind='partition';
+  const local=all[name.replace(/^(?:Contents\/)?(Config-\d+)-Partition$/,'$1-FeatureBodies/LocalBodies')];
+  if(!parsed.error){
+    const hidden=[...inPart(parsed)].filter(([,v])=>v===0).map(([b])=>b);
+    const bodies=local?embedded(local,codec,options).map(x=>parse(x.body,true,options)).filter(q=>!q.error&&q.nodes.some(n=>n.type===14)&&![...inPart(q).values()].includes(0)):[];
+    if(bodies.length){parsed=merge([parsed,...bodies]);source=name+' + '+bodies.length+' LocalBodies';kind='partition + local';}
+    if(hidden.length)parsed={...parsed,hidden};
+  }
+  return {parsed,source,kind};
+}
+
+/* Without ModelHeaders the lowest ID was the only rule, and it is wrong in 118a3cb0 (56 mm) and
+ * 289756ce (0.1 mm). The display picks instead when exactly one geometry fits it (select.js). */
+function byDisplay(raw,all,primary,codec,options){
+  const S=selector&&selector();
+  if(!S||primary.chosenBy!=='lowest'||primary.candidates.length<2)return null;
+  const built=primary.candidates.map(name=>{try{return {name,...assemble(all,name,codec,options)};}catch(e){return {name,parsed:{error:e.message}};}});
+  let r;try{r=S.choose(raw,built,codec.inflateRaw,codec.inflate);}catch(e){return null;}
+  if(!r.name)return null;
+  return {...built.find(b=>b.name===r.name),matches:r.matches};
 }
 
 function readBody(raw,options={},codec){
@@ -233,27 +263,22 @@ function readBody(raw,options={},codec){
     if(!l)throw Error('No Parasolid body: no Config-N-Partition, Config-N-Body or transmit stream (a part with no solid has none)');
     return {source:l.name,kind:l.kind,parsed:parse(l.inner,true,options)};
   }
-  const primary=extractPrimary(raw,all,codec,options);
-  let parsed=parse(primary.inner,true,options),source=primary.name,kind='partition';
-  const local=all[primary.name.replace(/^(?:Contents\/)?(Config-\d+)-Partition$/,'$1-FeatureBodies/LocalBodies')];
-  if(!parsed.error){
-    const hidden=[...inPart(parsed)].filter(([,v])=>v===0).map(([b])=>b);
-    const bodies=local?embedded(local,codec,options).map(x=>parse(x.body,true,options)).filter(q=>!q.error&&q.nodes.some(n=>n.type===14)&&![...inPart(q).values()].includes(0)):[];
-    if(bodies.length){parsed=merge([parsed,...bodies]);source=primary.name+' + '+bodies.length+' LocalBodies';kind='partition + local';}
-    if(hidden.length)parsed={...parsed,hidden};
-  }
+  const primary=extractPrimary(raw,all,codec,options),picked=byDisplay(raw,all,primary,codec,options);
+  const configuration=picked?{name:picked.name,by:'display',matches:picked.matches}:{name:primary.name,by:primary.chosenBy};
+  let {parsed,source,kind}=picked||assemble(all,primary.name,codec,options);
   if(!parsed.error&&!parsed.nodes.some(n=>n.type===14)){
+    const start=source;
     for(const [k,b] of Object.entries(all)){
       const g=find(b,GUID,0);if(g<4||/Partition$/.test(k))continue;
       for(const x of sections(b,g-4,codec,options).out){
         const q=parse(x.body,true,options);
         if(!q.error&&q.nodes.some(n=>n.type===14)){parsed=q;source=k;kind=x.kind;break;}
       }
-      if(source!==primary.name)break;
+      if(source!==start)break;
     }
   }
-  return {source,kind,parsed,partitions:primary.candidates,configuration:{name:primary.name,by:primary.chosenBy}};
+  return {source,kind,parsed,partitions:primary.candidates,configuration};
 }
 
-return {GUID,streams,sections,extractPrimary,survey,legacyBody,readBody};
+return {GUID,streams,sections,extractPrimary,survey,legacyBody,assemble,readBody,merge};
 });
