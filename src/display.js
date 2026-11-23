@@ -35,8 +35,9 @@
     if(scalarFlag===1)for(let i=0;i<2;i++){const a=r.arr(o,4,100);scalarArrays.push({offset:o,values:r.floats(a)});o=a.end;}
     else if(scalarFlag!==0)throw Error('Unknown optional-scalar flag at '+(o-4));
     const reserved=[r.u(o),r.u(o+4),r.u(o+8)];o+=12;
-    // Nonzero here means the record has no id/tag block: an appearance block follows instead
-    // (colour, material strings). 56 faces in 3 corpus parts, 0 of 13,533 good ones (EXP-099).
+    // Nonzero here means the record has no id/tag block; on some of them an appearance block
+    // (colour, material strings) sits in its place. 994 records in 21 corpus parts, and 0 of the
+    // 13,533 records that have an id block (EXP-099, blind-checked).
     if(reserved.some(x=>x!==0))throw Error('Metadata has no id block (reserved words '+reserved.join(',')+')');
     const rawId=r.u(o),direction=[r.f64(o+4),r.f64(o+12),r.f64(o+20)];o+=28;
     const typeTag=r.u(o),parameters=Array.from({length:8},(_,i)=>r.f64(o+4+i*8)),count=r.u(o+68);
