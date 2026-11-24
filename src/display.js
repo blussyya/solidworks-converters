@@ -94,6 +94,11 @@
           // 3-vertex strips, i.e. single triangles; its meaning beyond that is not established.
           const control=tokens[t++];if(control!==1&&!(control===0&&n===3))throw Error('Unsupported strip control');controls.push(control);
           const add=(a,b)=>edgeAnnotations.push({strip:s,vertices:[a,b],tokenOffset:b1.offset+16+4*t,id:tokens[t++]});
+          // A control-0 strip (one triangle, pre-2011) lists its edges as (v,v+2), (v,v+1), (v+1,v+2):
+          // the first two are swapped against a control-1 strip. Read in the usual order, 274 boundary
+          // edges of chainwheel lose their ids and 141 of its 189 faces don't close; swapped, all 189
+          // close and match the native loops (EXP-117).
+          if(control===0){add(v,v+2);add(v,v+1);add(v+1,v+2);indices.push(v,v+1,v+2);v+=n;return;}
           add(v,v+1);
           for(let i=2;i<n;i++){
             indices.push(...(i%2===0?[v+i-2,v+i-1,v+i]:[v+i-1,v+i-2,v+i]));
