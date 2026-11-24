@@ -232,6 +232,9 @@ function toSTEP(model,opts){
 function emitPlanarFace(w,f,faceIds,report){
  const n=nrm(f.direction);
  if(!n[0]&&!n[1]&&!n[2])return false;
+ // A cycle that passes a vertex twice walks a seam or slit edge on both sides (EXP-115). It isn't a
+ // simple polygon, so keep that face's triangles.
+ if(f.cycles.some(c=>c&&Array.isArray(c.vertices)&&new Set(c.vertices.map(i=>String(f.vertices[i]))).size!==c.vertices.length))return false;
  const rings=[];
  for(const c of f.cycles){
   if(!c||!Array.isArray(c.vertices)||c.vertices.length<3)continue;

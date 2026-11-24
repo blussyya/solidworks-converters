@@ -162,3 +162,17 @@ test('records without an id block get no metadata',{skip:CORPUS&&fs.existsSync(p
     assert.equal(d.faces.filter(x=>x.metadata).length,0,id);
   }
 });
+
+test('other record layouts: SolidWorks 2025/2026 saves read their face metadata, 140-byte records have none',needsCorpus,t=>{
+  // Layout C (EXP-116): the [8,100,2] array before the surface record is missing. The 2026 re-save of
+  // head_back has 535 faces, all in layout C.
+  const c=display.parseSLDPRT(fs.readFileSync(path.join(CORPUS,'test files online/2013/exports-SW2026/82981f2a_head_back-2026.sldprt')),iR,iZ);
+  assert.equal(c.faces.length,535);
+  assert(c.faces.every(f=>f.metadata&&f.metadata.layout==='C'&&f.metadata.typeTag>=4001&&f.metadata.typeTag<=4010));
+  // Layout B: a 140-byte bounding record with twice the radius at +92. Its surface record ends after
+  // three nonzero words, so it has no id or tag to read.
+  const b=display.parseSLDPRT(fs.readFileSync(path.join(CORPUS,'test files online/2020/7841a106_6344428.SLDPRT')),iR,iZ);
+  assert(b.faces.length>0);
+  assert(b.faces.every(f=>f.bounds&&!f.metadata&&/no id block/.test(f.metadataError)));
+  t.diagnostic(`layout C: ${c.faces.length} faces with metadata; layout B: ${b.faces.length} faces, no id block`);
+});

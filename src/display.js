@@ -29,8 +29,22 @@
     }
     return {b,d,bound,u,f64,arr,words,floats};
   }
+  // Three layouts of the bounding record and the head of the surface record (EXP-116):
+  //   A  132-byte bounding record, then the [8,100,2] array, a u32 flag and the [12,100,2] arrays
+  //   B  140-byte record: a float64 at +92 equal to twice the radius, the rest moved by 8 (190 faces in 3 files)
+  //   C  SolidWorks 2025 and 2026 saves: +128 is 0 and the [8,100,2] array is missing (4,432 faces in 18 files)
+  // Each is told apart by its own structure, not by the file's version: one file at DisplayLists
+  // 18000 (a 2025 save) is all layout A.
+  function recordLayout(r,start){
+    const isArr=(o,stride,kind)=>{try{r.arr(o,stride,kind);return true;}catch(e){return false;}};
+    if(isArr(start+132,8,100))return {layout:'A',size:132,a8:start+132};
+    try{if(Math.abs(r.f64(start+92)-2*r.f64(start+84))<=1e-12*Math.max(1,Math.abs(r.f64(start+92)))&&isArr(start+140,8,100))return {layout:'B',size:140,a8:start+140};}catch(e){}
+    try{if(r.u(start+128)===0&&r.u(start+132)===1&&isArr(start+136,12,100))return {layout:'C',size:132,a8:null};}catch(e){}
+    r.arr(start+132,8,100);   // none fits: report the layout A failure, as before
+  }
   function metadata(r,start,limit){
-    const a8=r.arr(start+132,8,100),flag=r.u(a8.end),positions=r.arr(a8.end+4,12,100),normals=r.arr(positions.end,12,100);
+    const L=recordLayout(r,start),a8=L.a8===null?null:r.arr(L.a8,8,100),at=a8?a8.end:start+L.size;
+    const flag=r.u(at),positions=r.arr(at+4,12,100),normals=r.arr(positions.end,12,100);
     let o=normals.end,scalarFlag=r.u(o);o+=4;const scalarArrays=[];
     if(scalarFlag===1)for(let i=0;i<2;i++){const a=r.arr(o,4,100);scalarArrays.push({offset:o,values:r.floats(a)});o=a.end;}
     else if(scalarFlag!==0)throw Error('Unknown optional-scalar flag at '+(o-4));
@@ -44,8 +58,8 @@
     if(typeTag<4001||typeTag>4010)throw Error('Unknown surface tag '+typeTag+' at '+o);  // tags seen: 4001-4010
     r.bound(o+72,count*8);const end=o+72+count*8;if(end>limit)throw Error('Metadata overlaps next geometry record');
     const edgeRecords=Array.from({length:count},(_,i)=>({id:r.u(o+72+i*8),typeTag:r.u(o+76+i*8)}));
-    return {offset:o,end,rawId,typeTag,direction,parameters,edgeRecords,
-      opaquePrefixRange:[start,start+132],auxiliaryArrays:[a8,positions,normals].map(a=>({...a,raw:r.b.slice(a.offset+16,a.end)})),auxiliaryFlag:flag,scalarFlag,scalarArrays,reserved};
+    return {offset:o,end,rawId,typeTag,direction,parameters,edgeRecords,layout:L.layout,
+      opaquePrefixRange:[start,start+L.size],auxiliaryArrays:(a8?[a8,positions,normals]:[positions,normals]).map(a=>({...a,raw:r.b.slice(a.offset+16,a.end)})),auxiliaryFlag:flag,scalarFlag,scalarArrays,reserved};
   }
   function extractDisplayLists(input,legacy=false){
     const r=reader(input),faces=[],rejected=[],warnings=[],overlays=[];let totalVertices=0;
@@ -116,6 +130,7 @@
         if(ids.length&&JSON.stringify(labels)!==JSON.stringify(ids))throw Error('Metadata edge labels disagree with Block1');
         if(meta.scalarArrays.some(a=>a.values.length!==f.vertexCount))throw Error('Optional scalar count mismatch');
         f.metadata=meta;
+        if(meta.layout==='B'&&f.bounds)f.bounds.raw=r.b.slice(f.geometryEnd,Math.min(f.geometryEnd+140,end));
         if(!ids.length&&labels.length)warnings.push({offset:meta.offset,message:'Metadata edge table empty; Block1 edge IDs retained without correspondence validation'});
         if(meta.reserved.some(x=>x!==0)||meta.auxiliaryFlag!==1||meta.auxiliaryArrays.some(a=>a.header[3]!==0))
           warnings.push({offset:meta.offset,message:'Unvalidated metadata auxiliary values retained raw'});
@@ -129,13 +144,54 @@
     const adj=new Map();
     function node(i){const k=[f.vertices[i*3],f.vertices[i*3+1],f.vertices[i*3+2]].join(',');if(!adj.has(k))adj.set(k,{vertex:i,edges:[]});return k;}
     for(const e of f.edgeAnnotations)if(e.id!==0){const a=node(e.vertices[0]),b=node(e.vertices[1]);adj.get(a).edges.push({to:b,id:e.id});adj.get(b).edges.push({to:a,id:e.id});}
-    if([...adj.values()].some(n=>n.edges.length!==2))throw Error('Ambiguous boundary graph; cycles not inferred');
+    // A seam (an edge both of whose fins are on this face) or two loops touching at a vertex give
+    // vertices with more than two neighbours. Walk those faces through their triangles instead.
+    if([...adj.values()].some(n=>n.edges.length!==2)){
+      try{return sectorCycles(f);}catch(e){throw Error('Ambiguous boundary graph; cycles not inferred');}
+    }
     const seen=new Set(),cycles=[];
     for(const start of adj.keys())if(!seen.has(start)){
       let prev=null,cur=start;const vertices=[],edgeIds=[];
       do{if(seen.has(cur))throw Error('Boundary traversal intersects an existing cycle');seen.add(cur);
         const n=adj.get(cur),e=n.edges.find(e=>e.to!==prev);vertices.push(n.vertex);edgeIds.push(e.id);prev=cur;cur=e.to;
       }while(cur!==start);
+      cycles.push({vertices,edgeIds});
+    }
+    return cycles;
+  }
+  // Boundary cycles traced through the triangle fans (EXP-115). Vertices are welded by exact
+  // coordinates. Every boundary segment (nonzero Block1 id) is a cut, and each triangle that owns a
+  // cut segment gives one half-edge. Around a vertex, triangles joined across uncut edges form a
+  // sector, and a sector's two half-edge ends are consecutive along the loop. A seam is walked once
+  // on each side, so a cycle can pass the same vertices twice.
+  function sectorCycles(f){
+    const key=i=>f.vertices[3*i]+','+f.vertices[3*i+1]+','+f.vertices[3*i+2];
+    const rep=new Map(),K=i=>{const k=key(i);if(!rep.has(k))rep.set(k,i);return k;},pk=(a,b)=>a<b?a+'|'+b:b+'|'+a;
+    const cut=new Map();
+    for(const e of f.edgeAnnotations)if(e.id!==0){const a=K(e.vertices[0]),b=K(e.vertices[1]);if(a!==b&&!cut.has(pk(a,b)))cut.set(pk(a,b),e.id);}
+    const tris=[],at=new Map();
+    for(let t=0;t<f.triangleIndices.length;t+=3){const k=[0,1,2].map(j=>K(f.triangleIndices[t+j]));if(k[0]===k[1]||k[1]===k[2]||k[0]===k[2])continue;
+      const ti=tris.length;tris.push(k);for(const x of k){if(!at.has(x))at.set(x,[]);at.get(x).push(ti);}}
+    const parent=new Map(),find=x=>{while(parent.get(x)!==x){parent.set(x,parent.get(parent.get(x)));x=parent.get(x);}return x;};
+    const corner=(t,k)=>{const c=t+'@'+k;if(!parent.has(c))parent.set(c,c);return c;},union=(a,b)=>{a=find(a);b=find(b);if(a!==b)parent.set(a,b);};
+    for(const [k,ts] of at){
+      for(const t of ts)corner(t,k);
+      const byOther=new Map();
+      for(const t of ts)for(const m of tris[t])if(m!==k&&!cut.has(pk(k,m))){if(!byOther.has(m))byOther.set(m,[]);byOther.get(m).push(t);}
+      for(const list of byOther.values())for(let i=1;i<list.length;i++)union(corner(list[0],k),corner(list[i],k));
+    }
+    const half=[];
+    for(const [p,id] of cut){const [a,b]=p.split('|');for(const t of at.get(a)||[])if(tris[t].includes(b))half.push({t,a,b,id});}
+    const ends=new Map();
+    half.forEach((h,hi)=>{for(const node of [h.a,h.b]){const s=find(corner(h.t,node));if(!ends.has(s))ends.set(s,[]);ends.get(s).push({hi,node});}});
+    for(const e of ends.values())if(e.length!==2)throw Error('Ambiguous boundary sector');
+    const next=(hi,node)=>{const e=ends.get(find(corner(half[hi].t,node)));return e[0].hi===hi&&e[0].node===node?e[1]:e[0];};
+    const used=new Set(),cycles=[];
+    for(let h0=0;h0<half.length;h0++)if(!used.has(h0)){
+      const vertices=[],edgeIds=[];let hi=h0,from=half[h0].a;
+      do{if(used.has(hi))throw Error('Boundary walk reused a half-edge');used.add(hi);const h=half[hi],to=from===h.a?h.b:h.a;
+        vertices.push(rep.get(from));edgeIds.push(h.id);const n=next(hi,to);hi=n.hi;from=to;
+      }while(hi!==h0);
       cycles.push({vertices,edgeIds});
     }
     return cycles;
@@ -156,5 +212,5 @@
       return {format,displayListsLength:dl.length,stream:extracted.stream||'DisplayLists',errors:result.faces.length?[]:[tess?'No supported face records found':'DisplayLists holds no tessellation (saved without display data)'],partial:result.rejected.length>0,...result};
     }catch(e){return {format,faces:[],errors:[e.message],warnings:[],rejected:[]};}
   }
-  return {parseSLDPRT,extractDisplayLists};
+  return {parseSLDPRT,extractDisplayLists,boundaryCycles};
 });

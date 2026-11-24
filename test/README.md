@@ -5,8 +5,8 @@ npm test                 # everything
 node test/run.js samples # only files whose name contains "samples"
 ```
 
-`samples.test.js`, `web.test.js`, `fit.test.js` and the fuzz half of `inflate.test.js` run from a
-fresh clone.
+`samples.test.js`, `web.test.js`, `fit.test.js`, `display-cycles.test.js` and the fuzz half of
+`inflate.test.js` run from a fresh clone.
 Everything else checks the readers against the **research corpus**: 73 `.SLDPRT` files plus
 SolidWorks' own STEP, STL, X_T and X_B exports of the 49 purpose-built models. The corpus lives
 in the dump repository, not here:
@@ -31,6 +31,7 @@ corpus tests are reported as skipped, not passed.
 | `inflate.test.js` | `src/inflate.js` against Node's zlib |
 | `web.test.js` | Viewer worker in an isolated context; server serves every asset |
 | `fit.test.js` | The curve fitter's dense check (a bump between the cheap samples, the error when rounds run out), SP_CURVE ends against edge and vertex tolerances, the exact mixed derivative of a B-spline extension, the swept extension past an open section |
+| `display-cycles.test.js` | Boundary cycles on a synthetic cylinder band with a seam (one cycle, the seam walked on both sides) and without one (two rings) |
 
 `fixtures/display-golden.json` is the SHA-256 of every file's complete display parse as produced
 by `parser/v0.3`. If a change alters any parse, the golden test names the file. Regenerate it
