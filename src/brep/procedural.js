@@ -60,6 +60,7 @@ function resolve(N,opts){
     }else if(s.type==='blendBound')throw Error('resolve: face '+f.id+' lies on a blend boundary surface');
     if(m)m.set(f.id,out);else surfMemo.set(s,out);return out;
   }
+  const blendish=s=>s.type==='blend'||s.type==='blendBound'||(s.type==='offset'&&blendish(s.basis));
   const edgeFaces=new Map();for(const f of N.faces)for(const l of f.loops)for(const co of l.coedges){if(!edgeFaces.has(co.edge))edgeFaces.set(co.edge,[]);edgeFaces.get(co.edge).push(f);}
   const fitted=(q,e)=>{if(!perFace(q))return surfMemo.get(q);const m=faceMemo.get(q),f=(edgeFaces.get(e.id)||[]).find(x=>x.surface===q);return m&&(f?m.get(f.id):m.values().next().value);};
 
@@ -79,22 +80,32 @@ function resolve(N,opts){
       // a blend's contact curve (one surface a BLEND_BOUND) is built from the raw blend and its
       // raw supports, which may be blends themselves; the fitted copies would not be found there
       else if(!c.surfaces.some(q=>q.type==='blendBound'))c={...c,surfaces:c.surfaces.map(q=>q.type==='blend'&&Math.abs(Math.abs(q.range[0])-Math.abs(q.range[1]))<1e-12?q:fitted(q,e)||q)};
-      const r=Fit.edgeCurve(e,c,p0,p1,{tolerance:tol,faceOf,vertexTolerance:e.v?e.v.map(v=>N.vertices.get(v).tolerance||0):null});
-      out={curve:r.curve,t0:r.t0,t1:r.t1,fit:r.error};report.fittedCurves++;report.errors.curve=Math.max(report.errors.curve,r.error);
+      const fo={tolerance:tol,faceOf,vertexTolerance:e.v?e.v.map(v=>N.vertices.get(v).tolerance||0):null};
+      let r=Fit.edgeCurve(e,c,p0,p1,fo);
+      // An SP_CURVE on a fitted blend is in Parasolid's blend (u,v), which we only approximate: v is the
+      // angle across the section, u close to the spine's arc length but not equal (EXP-121). When that
+      // fit misses the bar and the edge has a fin on a surface we evaluate exactly, fit the fin instead;
+      // Parasolid keeps the two within the edge's tolerance. f666f342 edges 1192, 1232, 1206, 11862:
+      // 2.4e-2 to 2.7e-3 m on the blend, 7.4e-9 to 1.4e-11 m from their B-spline and offset fins.
+      if(c.type==='spcurve'&&c.surface.fitted&&r.error>tol)for(const pc of e.pcurves||[]){let k=pc.curve;if(k.type==='trimmed')k=k.basis;
+        if(k.type!=='spcurve'||blendish(k.surface))continue;
+        try{const r2=Fit.edgeCurve(e,k,p0,p1,fo);if(r2.error<r.error)r={...r2,fromFin:pc.face};}catch(x){}}
+      out={curve:r.curve,t0:r.t0,t1:r.t1,fit:r.error,fromFin:r.fromFin};report.fittedCurves++;report.errors.curve=Math.max(report.errors.curve,r.error);
     }else throw Error('resolve: edge '+e.id+' curve '+c.type);
     // exact curves in the faces' parameter spaces (SP_CURVE fins), on the resolved surfaces
     const pcurves=(e.pcurves||[]).map(pc=>{let k=pc.curve;if(k.type==='trimmed')k=k.basis;if(k.type!=='spcurve')return null;
       const f=faces.find(x=>x.id===pc.face);if(!f||f.surface!==k.surface)return null;return {face:pc.face,surface:f.surface,c2:k.c2};}).filter(Boolean);
     if(pcurves.length)report.pcurveEdges++;
     if(e.tolerant)report.tolerantEdges++;
-    edges.set(e.id,{id:e.id,v:e.v,curve:out.curve,t0:out.t0,t1:out.t1,sameSense:out.t1>out.t0,pcurves,fit:out.fit,tolerance:e.tolerance});
+    edges.set(e.id,{id:e.id,v:e.v,curve:out.curve,t0:out.t0,t1:out.t1,sameSense:out.t1>out.t0,pcurves,fit:out.fit,tolerance:e.tolerance,fromFin:out.fromFin});
   }
   // A tolerant edge has a curve per face and no 3D curve; we use the first face's. Parasolid
   // lets the faces miss each other by the edge's tolerance, so measure how far the curve is
-  // from the other face: the file's uncertainty has to cover it.
+  // from the other face: the file's uncertainty has to cover it. The same for an edge fitted from
+  // a fin instead of its own curve (above).
   const facesOf=new Map();
   for(const f of faces)for(const l of f.loops)for(const co of l.coedges){if(!facesOf.has(co.edge))facesOf.set(co.edge,[]);facesOf.get(co.edge).push(f);}
-  for(const e of N.edges.values()){if(!e.tolerant)continue;const r=edges.get(e.id);let gap=0;
+  for(const e of N.edges.values()){const r=edges.get(e.id);if(!e.tolerant&&!r.fromFin)continue;let gap=0;
     for(let k=0;k<=16;k++){const X=G.curvePoint(r.curve,r.t0+(r.t1-r.t0)*k/16);
       for(const f of facesOf.get(e.id)||[])gap=Math.max(gap,Math.abs(G.surfaceDistance(f.surface,X).d));}
     r.gap=gap;report.maxEdgeGap=Math.max(report.maxEdgeGap,gap);}
