@@ -471,7 +471,13 @@ function reanchor(S,c,p0,p1,N,tol,tols){
     return fwd?{curve:r.curve,t0:x,t1:y,error:r.error}:{curve:r.curve,t0:y,t1:x,error:r.error};
   }
   if(vSpan<1e-3){   // constant v: a contact curve along the blend's boundary
-    const vc=vmin===vmax?vmin:(Math.abs(vmin)<=Math.abs(vmax)?vmin:vmax);
+    let vc=vmin===vmax?vmin:(Math.abs(vmin)<=Math.abs(vmax)?vmin:vmax);
+    // Which boundary: the 2D v names Parasolid's side, and Parasolid's v can run across the section
+    // the other way from the fit's. On f666f342's blend 15483 edges with 2D v = 1 have both vertices on
+    // the fit's v = 0 contact, 2.43e-3 m from v = 1 (EXP-121). A contact edge (v at 0 or 1) takes the
+    // boundary its vertices are on.
+    if(Math.min(vc,1-vc)<1e-2){const off=w=>{let s=0;for(const q of [p0,p1]){let b=Infinity;for(let i=0;i<=256;i++)b=Math.min(b,dist(G.surfaceEval(S,i/256,w).p,q));s+=b;}return s;};
+      vc=off(0)<=off(1)?0:1;}
     const anchors=q=>{let bt2=0,dq=Infinity;
       for(let i=0;i<=256;i++){const s=dist(G.surfaceEval(S,i/256,vc).p,q);if(s<dq){dq=s;bt2=i/256;}}
       let bvv=bt2,bq=dq;

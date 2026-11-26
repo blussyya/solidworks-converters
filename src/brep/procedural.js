@@ -38,10 +38,17 @@ function resolve(N,opts){
   const faceOf=new Map(N.faces.map(f=>[f.id,f]));
 
   // surfaces first: blends become B-splines, and curves on them must see the B-spline
-  const surfMemo=new Map();
+  // A blend surface can carry more than one face (f666f342: blend 15483 under faces 13093 and 13171,
+  // whose spine ranges are 0.018..0.332 and 0.208..0.722). A fit covers only the spine its face
+  // needs, so each such face gets its own fit, and an edge on that surface is evaluated on the fit of
+  // the face it bounds. Reusing the first face's fit put the other's edges up to 4.2 cm off (EXP-121).
+  const facesOn=new Map();for(const f of N.faces){if(!facesOn.has(f.surface))facesOn.set(f.surface,[]);facesOn.get(f.surface).push(f);}
+  const perFace=s=>s.type==='blend'&&(facesOn.get(s)||[]).length>1;
+  const surfMemo=new Map(),faceMemo=new Map();
   const faces=N.faces.map(f=>({id:f.id,surface:surface(f.surface,f),sameSense:f.sameSense,loops:f.loops}));
   function surface(s,f){
-    if(surfMemo.has(s))return surfMemo.get(s);
+    const m=perFace(s)?(faceMemo.get(s)||faceMemo.set(s,new Map()).get(s)):null;
+    if(m?m.has(f.id):surfMemo.has(s))return m?m.get(f.id):surfMemo.get(s);
     let out=s;
     if(s.type==='blend'){
       const r=Fit.blendSurface(s,f,N,{tolerance:tol});
@@ -51,8 +58,10 @@ function resolve(N,opts){
       // 144 offsets are of B-splines and swept surfaces, EXP-086)
       out={...s,basis:surface(s.basis,f)};
     }else if(s.type==='blendBound')throw Error('resolve: face '+f.id+' lies on a blend boundary surface');
-    surfMemo.set(s,out);return out;
+    if(m)m.set(f.id,out);else surfMemo.set(s,out);return out;
   }
+  const edgeFaces=new Map();for(const f of N.faces)for(const l of f.loops)for(const co of l.coedges){if(!edgeFaces.has(co.edge))edgeFaces.set(co.edge,[]);edgeFaces.get(co.edge).push(f);}
+  const fitted=(q,e)=>{if(!perFace(q))return surfMemo.get(q);const m=faceMemo.get(q),f=(edgeFaces.get(e.id)||[]).find(x=>x.surface===q);return m&&(f?m.get(f.id):m.values().next().value);};
 
   const edges=new Map();
   for(const e of N.edges.values()){
@@ -66,10 +75,10 @@ function resolve(N,opts){
       // surface must see the fitted B-spline. Its raw (u,v) is Parasolid's own blend parameter,
       // unrelated to the fitted surface's spine parameterisation -- when the plain fit can't
       // reach the tolerance, spcurveEdge re-anchors the curve geometrically instead.
-      if(c.type==='spcurve')c={...c,surface:surfMemo.get(c.surface)||c.surface};
+      if(c.type==='spcurve')c={...c,surface:fitted(c.surface,e)||c.surface};
       // a blend's contact curve (one surface a BLEND_BOUND) is built from the raw blend and its
       // raw supports, which may be blends themselves; the fitted copies would not be found there
-      else if(!c.surfaces.some(q=>q.type==='blendBound'))c={...c,surfaces:c.surfaces.map(q=>q.type==='blend'&&Math.abs(Math.abs(q.range[0])-Math.abs(q.range[1]))<1e-12?q:surfMemo.get(q)||q)};
+      else if(!c.surfaces.some(q=>q.type==='blendBound'))c={...c,surfaces:c.surfaces.map(q=>q.type==='blend'&&Math.abs(Math.abs(q.range[0])-Math.abs(q.range[1]))<1e-12?q:fitted(q,e)||q)};
       const r=Fit.edgeCurve(e,c,p0,p1,{tolerance:tol,faceOf,vertexTolerance:e.v?e.v.map(v=>N.vertices.get(v).tolerance||0):null});
       out={curve:r.curve,t0:r.t0,t1:r.t1,fit:r.error};report.fittedCurves++;report.errors.curve=Math.max(report.errors.curve,r.error);
     }else throw Error('resolve: edge '+e.id+' curve '+c.type);
