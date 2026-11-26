@@ -337,7 +337,12 @@ function bsplineNewton(s,p,u,v,free){
     if((Math.abs(nu2-u)<1e-15*(1+Math.abs(u))||Math.abs(su)<1e-15*(1+Math.abs(u)))&&(Math.abs(nv2-v)<1e-15*(1+Math.abs(v))||Math.abs(sv)<1e-15*(1+Math.abs(v))))return {u:nu2,v:nv2};
     // or the step moves the point by less than 1e-14 m (the parameter test alone can miss that by
     // rounding on a wide knot range, and the caller then searches the whole surface again)
-    if(free&&norm(add(mul(e.du,nu2-u),mul(e.dv,nv2-v)))<1e-14)return {u:nu2,v:nv2};
+    // Plain feet need it too, measured on the unclamped step: on a surface with a short parameter
+    // direction (f666f342's 3x96 B-surface 15500, 1.5 mm per unit u) Newton settles in 3 steps and
+    // then jitters by 2e-15 in u, the parameter test never passes, and every call ended in a full
+    // grid search (EXP-119). The clamped step can't be used: at a knot edge it is zero while the
+    // foot is still moving, which put 5f8e9db3's feet on the wrong coil.
+    if(norm(add(mul(e.du,su),mul(e.dv,sv)))<1e-14)return {u:nu2,v:nv2};
     u=nu2;v=nv2;
   }
   // at a knot-range edge the curvature jumps (polynomial inside, flat extension outside) and the
